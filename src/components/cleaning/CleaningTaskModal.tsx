@@ -4,6 +4,7 @@ import {
   Bot,
   Check,
   CheckCircle2,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Droplets,
@@ -26,25 +27,25 @@ import { useApp } from '../../context/AppContext'
 import { level2Zones, zonesLevel1 } from '../../data/mockData'
 import type { CleaningMode, FacilityZone, IntensityOption } from '../../types'
 
-const steps = ['Robot', 'Area', 'Settings', 'Schedule', 'Review']
+const steps = ['Area', 'Robot', 'Mode', 'When', 'Review']
 
 const modeOptions: ModeOption[] = [
   {
     id: 'standard',
-    title: 'Standard Clean',
+    title: 'Standard',
     description: 'Best for regular daily cleaning.',
     icon: <Sparkles size={19} />,
   },
   {
     id: 'deep',
     title: 'Deep Clean',
-    description: 'More intensive cleaning for busy or dirtier areas.',
+    description: 'For busy or dirtier areas that need more attention.',
     icon: <WandSparkles size={19} />,
   },
   {
     id: 'spot',
     title: 'Spot Clean',
-    description: 'Clean a specific dirty area or spill.',
+    description: 'For spills or a small dirty area.',
     icon: <Rocket size={19} />,
   },
 ]
@@ -127,7 +128,7 @@ function AreaSelector({
                   fill="#E5484D"
                   fontFamily="Inter, sans-serif"
                 >
-                  No-Go
+                  Restricted
                 </text>
               )}
             </g>
@@ -163,16 +164,29 @@ export function CleaningTaskModal() {
   const [date, setDate] = useState(defaultDate)
   const [time, setTime] = useState('15:00')
   const [recurring, setRecurring] = useState('Weekdays')
+  const [showAdvanced, setShowAdvanced] = useState(false)
   const [submitted, setSubmitted] = useState(false)
 
   const mapZones = floor === 'Level 1' ? zonesLevel1 : level2Zones
   const currentRobot = robots.find((r) => r.id === robotId) ?? null
 
+  const recommendedRobot =
+    robots.find((r) => r.status === 'ready') ??
+    robots.find((r) => r.status === 'charging') ??
+    null
+  const recommendedId = recommendedRobot?.id ?? null
+
   const open = taskModalOpen
 
   useEffect(() => {
-    if (open && taskModalRobotId) setRobotId(taskModalRobotId)
-  }, [open, taskModalRobotId])
+    if (!open) return
+    if (taskModalRobotId) {
+      setRobotId(taskModalRobotId)
+    } else {
+      setRobotId(recommendedId)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open])
 
   useEffect(() => {
     const d = defaultIntensity[mode]
@@ -190,6 +204,7 @@ export function CleaningTaskModal() {
       setNoGo([])
       setScheduleType('now')
       setMode('standard')
+      setShowAdvanced(false)
     }, 200)
   }
 
@@ -274,8 +289,8 @@ export function CleaningTaskModal() {
   }
 
   const canContinue =
-    (step === 0 && robotId !== null) ||
-    (step === 1 && (entireFloor || selectedAreas.length > 0)) ||
+    (step === 0 && (entireFloor || selectedAreas.length > 0)) ||
+    (step === 1 && robotId !== null) ||
     step === 2 ||
     step === 3
 
@@ -284,7 +299,7 @@ export function CleaningTaskModal() {
       open={open}
       onClose={handleClose}
       title="New Cleaning Task"
-      subtitle="Plan a cleaning job in 5 quick steps"
+      subtitle="Choose where to clean — we'll recommend the best robot"
       maxWidth="max-w-3xl"
     >
       {submitted ? (
@@ -363,52 +378,8 @@ export function CleaningTaskModal() {
             {step === 0 && (
               <div>
                 <p className="mb-3 text-[13px] font-semibold text-ink-secondary">
-                  Choose a robot for this task
+                  Where should CleanBot clean?
                 </p>
-                <div className="grid grid-cols-3 gap-3">
-                  {robots.map((robot) => {
-                    const available = robot.status === 'ready' || robot.status === 'charging'
-                    const recommended = robot.status === 'ready'
-                    const selected = robotId === robot.id
-                    return (
-                      <button
-                        key={robot.id}
-                        onClick={() => setRobotId(robot.id)}
-                        className={`relative flex flex-col items-center gap-1 rounded-xl border p-4 text-center transition-all duration-150 ${
-                          selected
-                            ? 'border-brand bg-brand-pale/60 ring-1 ring-brand'
-                            : 'border-line bg-white hover:border-[#CBD5E1]'
-                        }`}
-                      >
-                        {recommended && (
-                          <span className="absolute right-2 top-2 rounded-full bg-success-pale px-2 py-0.5 text-[10px] font-bold text-[#18794E]">
-                            Recommended
-                          </span>
-                        )}
-                        <RobotVisual size={64} />
-                        <span className="text-[13.5px] font-bold text-ink">{robot.name}</span>
-                        <span className="text-[11px] font-medium text-ink-muted">{robot.id}</span>
-                        <StatusBadge status={robot.status} />
-                        <span className={`text-[11px] ${available ? 'text-success' : 'text-ink-muted'}`}>
-                          {robot.status === 'cleaning'
-                            ? 'Cleaning now'
-                            : robot.status === 'paused'
-                              ? 'Paused'
-                              : robot.status === 'ready'
-                                ? 'Ready to go'
-                                : robot.status === 'charging'
-                                  ? 'Charging'
-                                  : 'Needs attention'}
-                        </span>
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
-            )}
-
-            {step === 1 && (
-              <div>
                 <div className="mb-4 flex gap-2">
                   {(['Level 1', 'Level 2'] as const).map((f) => (
                     <button
@@ -480,7 +451,7 @@ export function CleaningTaskModal() {
                           }}
                           className="flex items-center gap-1 text-[11px] font-semibold text-brand hover:text-brand-dark"
                         >
-                          <X size={11} className="rotate-45" /> Add No-Go Zone
+                          <X size={11} className="rotate-45" /> Add Restricted Area
                         </button>
                       </div>
                       <p className="mb-1.5 text-[11px] leading-snug text-ink-muted">
@@ -518,10 +489,87 @@ export function CleaningTaskModal() {
               </div>
             )}
 
+            {step === 1 && (
+              <div>
+                <p className="mb-3 text-[13px] font-semibold text-ink-secondary">
+                  Which robot should clean this area?
+                </p>
+                {recommendedRobot && (
+                  <button
+                    key={recommendedRobot.id}
+                    onClick={() => setRobotId(recommendedRobot.id)}
+                    className={`relative mb-3 flex w-full items-center gap-4 rounded-xl border p-4 text-left transition-all duration-150 ${
+                      robotId === recommendedRobot.id
+                        ? 'border-brand bg-brand-pale/60 ring-1 ring-brand'
+                        : 'border-line bg-white hover:border-[#CBD5E1]'
+                    }`}
+                  >
+                    <span className="absolute right-3 top-3 rounded-full bg-success-pale px-2 py-0.5 text-[10px] font-bold text-[#18794E]">
+                      Recommended
+                    </span>
+                    <RobotVisual size={60} />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[14.5px] font-bold text-ink">{recommendedRobot.name}</p>
+                      <p className="text-[11px] text-ink-muted">{recommendedRobot.id}</p>
+                      <div className="mt-1.5 flex items-center gap-3 text-[12px] font-semibold text-ink-secondary">
+                        <span className="flex items-center gap-1">
+                          <BatteryMediumMini /> {recommendedRobot.battery}% battery
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <Droplets size={12} className="text-water" /> {recommendedRobot.water}% water
+                        </span>
+                      </div>
+                      <p className="mt-1 text-[11.5px] text-[#18794E]">
+                        Recommended because this robot is ready and available.
+                      </p>
+                    </div>
+                    <StatusBadge status={recommendedRobot.status} />
+                  </button>
+                )}
+
+                <p className="mb-2 mt-1 text-[12px] font-semibold uppercase tracking-wide text-ink-muted">
+                  Other robots
+                </p>
+                <div className="grid grid-cols-3 gap-3">
+                  {robots
+                    .filter((r) => r.id !== recommendedId)
+                    .map((robot) => {
+                      const selected = robotId === robot.id
+                      return (
+                        <button
+                          key={robot.id}
+                          onClick={() => setRobotId(robot.id)}
+                          className={`flex flex-col items-center gap-1 rounded-xl border p-4 text-center transition-all duration-150 ${
+                            selected
+                              ? 'border-brand bg-brand-pale/60 ring-1 ring-brand'
+                              : 'border-line bg-white hover:border-[#CBD5E1]'
+                          }`}
+                        >
+                          <RobotVisual size={56} />
+                          <span className="text-[13.5px] font-bold text-ink">{robot.name}</span>
+                          <StatusBadge status={robot.status} />
+                          <span className="text-[11px] text-ink-muted">
+                            {robot.status === 'cleaning'
+                              ? 'Cleaning now'
+                              : robot.status === 'paused'
+                                ? 'Paused'
+                                : robot.status === 'ready'
+                                  ? 'Ready to go'
+                                  : robot.status === 'charging'
+                                    ? 'Charging'
+                                    : 'Needs attention'}
+                          </span>
+                        </button>
+                      )
+                    })}
+                </div>
+              </div>
+            )}
+
             {step === 2 && (
               <div>
                 <p className="mb-3 text-[13px] font-semibold text-ink-secondary">
-                  Choose a cleaning mode
+                  How should this area be cleaned?
                 </p>
                 <div className="grid grid-cols-3 gap-3">
                   {modeOptions.map((m) => (
@@ -529,44 +577,59 @@ export function CleaningTaskModal() {
                   ))}
                 </div>
 
-                <div className="mt-5 grid grid-cols-2 gap-4">
-                  <div>
-                    <p className="mb-2 text-[13px] font-semibold text-ink-secondary">Water Usage</p>
-                    <div className="inline-flex w-full rounded-lg border border-line bg-app p-1">
-                      {intensities.map((opt) => (
-                        <button
-                          key={opt}
-                          onClick={() => setWater(opt)}
-                          className={`flex-1 rounded-md px-2 py-1.5 text-[12.5px] font-semibold transition-colors ${
-                            water === opt ? 'bg-brand text-white shadow-sm' : 'text-ink-secondary hover:text-ink'
-                          }`}
-                        >
-                          {opt}
-                        </button>
-                      ))}
+                <div className="mt-5 rounded-xl bg-brand-pale/60 px-4 py-3 text-[12.5px] text-ink-secondary">
+                  <span className="font-semibold text-brand-dark">Recommended settings</span>
+                  {' · '}Water {defaultIntensity[mode].water}, Suction {defaultIntensity[mode].suction}.
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setShowAdvanced((v) => !v)}
+                  className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg border border-line bg-white py-2.5 text-[13px] font-semibold text-ink-secondary transition-colors hover:bg-app"
+                >
+                  {showAdvanced ? 'Hide cleaning settings' : 'Adjust cleaning settings'}
+                  <ChevronDown
+                    size={15}
+                    className={`transition-transform ${showAdvanced ? 'rotate-180' : ''}`}
+                  />
+                </button>
+
+                {showAdvanced && (
+                  <div className="mt-3 grid grid-cols-2 gap-4 animate-fade-in">
+                    <div>
+                      <p className="mb-2 text-[13px] font-semibold text-ink-secondary">Water Usage</p>
+                      <div className="inline-flex w-full rounded-lg border border-line bg-app p-1">
+                        {intensities.map((opt) => (
+                          <button
+                            key={opt}
+                            onClick={() => setWater(opt)}
+                            className={`flex-1 rounded-md px-2 py-1.5 text-[12.5px] font-semibold transition-colors ${
+                              water === opt ? 'bg-brand text-white shadow-sm' : 'text-ink-secondary hover:text-ink'
+                            }`}
+                          >
+                            {opt}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <p className="mb-2 text-[13px] font-semibold text-ink-secondary">Suction</p>
+                      <div className="inline-flex w-full rounded-lg border border-line bg-app p-1">
+                        {intensities.map((opt) => (
+                          <button
+                            key={opt}
+                            onClick={() => setSuction(opt)}
+                            className={`flex-1 rounded-md px-2 py-1.5 text-[12.5px] font-semibold transition-colors ${
+                              suction === opt ? 'bg-brand text-white shadow-sm' : 'text-ink-secondary hover:text-ink'
+                            }`}
+                          >
+                            {opt}
+                          </button>
+                        ))}
+                      </div>
                     </div>
                   </div>
-                  <div>
-                    <p className="mb-2 text-[13px] font-semibold text-ink-secondary">Suction</p>
-                    <div className="inline-flex w-full rounded-lg border border-line bg-app p-1">
-                      {intensities.map((opt) => (
-                        <button
-                          key={opt}
-                          onClick={() => setSuction(opt)}
-                          className={`flex-1 rounded-md px-2 py-1.5 text-[12.5px] font-semibold transition-colors ${
-                            suction === opt ? 'bg-brand text-white shadow-sm' : 'text-ink-secondary hover:text-ink'
-                          }`}
-                        >
-                          {opt}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-                <div className="mt-3 flex items-center gap-2 rounded-xl bg-brand-pale/60 px-4 py-2.5 text-[12.5px] text-ink-secondary">
-                  <Droplets size={14} className="text-brand" />
-                  Recommended for {modeOptions.find((m) => m.id === mode)?.title}: Water {defaultIntensity[mode].water}, Suction {defaultIntensity[mode].suction}.
-                </div>
+                )}
               </div>
             )}
 
@@ -589,9 +652,8 @@ export function CleaningTaskModal() {
                   Review your cleaning task
                 </p>
                 <div className="overflow-hidden rounded-xl border border-line">
+                  <SummaryRow label="Area" value={`${floor} · ${areaLabel}`} />
                   <SummaryRow label="Robot" value={`${currentRobot.name} (${currentRobot.id})`} />
-                  <SummaryRow label="Floor" value={floor} />
-                  <SummaryRow label="Areas" value={areaLabel} />
                   <SummaryRow label="Mode" value={modeOptions.find((m) => m.id === mode)?.title ?? mode} />
                   <SummaryRow label="Water" value={water} />
                   <SummaryRow label="Suction" value={suction} />
@@ -649,6 +711,10 @@ export function CleaningTaskModal() {
       )}
     </Modal>
   )
+}
+
+function BatteryMediumMini() {
+  return <span className="inline-block h-2.5 w-2.5 rounded-full bg-success" />
 }
 
 function PlayIcon() {

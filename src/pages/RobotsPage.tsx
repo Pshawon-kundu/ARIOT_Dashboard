@@ -101,7 +101,10 @@ export function RobotsPage() {
 
   return (
     <div>
-      <PageHeader title="Robots" subtitle="Monitor and manage your CleanBot fleet">
+      <PageHeader
+        title="Robots"
+        subtitle="Check the status, location, and readiness of your cleaning robots"
+      >
         <Button icon={<Plus size={16} />} onClick={() => setAddOpen(true)}>
           Add Robot
         </Button>

@@ -1,12 +1,12 @@
 import { useState, type ReactNode } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
-  AreaChart as AreaIcon,
   CalendarDays,
   ChevronDown,
-  Droplets,
   FileDown,
   Flame,
-  MapPinned,
+  Lightbulb,
+  MapPin,
   RotateCcw,
   Sparkles,
   Target,
@@ -32,13 +32,38 @@ const dateFilters = ['Today', '7 Days', '30 Days', 'Custom']
 
 export function ReportsPage() {
   const { openTaskModal, showToast } = useApp()
+  const navigate = useNavigate()
   const [range, setRange] = useState('7 Days')
+
+  const recommendations = [
+    {
+      icon: <Flame size={16} className="text-warning" />,
+      title: 'Main Entrance gets dirty most often between 12 PM and 2 PM.',
+      body: 'Consider adding an afternoon cleaning to keep it presentable.',
+      action: 'Schedule Cleaning',
+      onAction: () => openTaskModal(),
+    },
+    {
+      icon: <Sparkles size={16} className="text-brand" />,
+      title: 'Cafeteria required 3 additional spot cleans this week.',
+      body: 'A short daily spot clean may reduce repeat requests.',
+      action: 'Review Area',
+      onAction: () => showToast('info', 'Area review', 'Showing Cafeteria cleaning history.'),
+    },
+    {
+      icon: <MapPin size={16} className="text-danger" />,
+      title: 'Level 2 Lobby was missed twice this week.',
+      body: 'Check the schedule so this area is cleaned every weekday.',
+      action: 'View Cleaning History',
+      onAction: () => navigate('/cleaning'),
+    },
+  ]
 
   return (
     <div>
       <PageHeader
-        title="Cleaning Reports"
-        subtitle="Review cleaning performance and facility coverage"
+        title="Reports"
+        subtitle="See cleaning results and areas that may need more attention"
       >
         <div className="flex gap-2">
           {dateFilters.map((d) => (
@@ -76,43 +101,32 @@ export function ReportsPage() {
         </div>
       </PageHeader>
 
-      {/* Report KPIs */}
-      <div className="grid grid-cols-6 gap-4">
+      {/* This week summary */}
+      <p className="mb-3 text-[15px] font-bold text-ink">This Week</p>
+      <div className="grid grid-cols-4 gap-4">
         <ReportStat
           icon={<Target size={20} />}
           tile="bg-brand-pale text-brand"
-          label="Cleaning Coverage"
-          value="96%"
+          label="Average Coverage"
+          value="94%"
         />
         <ReportStat
-          icon={<MapPinned size={20} />}
+          icon={<MapPin size={20} />}
           tile="bg-success-pale text-success"
           label="Area Cleaned"
-          value="11,820 sq.ft"
+          value="72,480 sq.ft"
         />
         <ReportStat
-          icon={<AreaIcon size={20} />}
+          icon={<Sparkles size={20} />}
           tile="bg-brand-pale text-brand"
-          label="Cleaning Duration"
-          value="1h 24m"
+          label="Cleaning Jobs"
+          value="46"
         />
         <ReportStat
           icon={<Flame size={20} />}
           tile="bg-danger-pale text-danger"
-          label="Dirt Hotspots"
-          value="8"
-        />
-        <ReportStat
-          icon={<Target size={20} />}
-          tile="bg-warning-pale text-warning"
-          label="Missed Areas"
-          value="2"
-        />
-        <ReportStat
-          icon={<Droplets size={20} />}
-          tile="bg-water/10 text-water"
-          label="Water Used"
-          value="14 L"
+          label="Areas Needing Attention"
+          value="4"
         />
       </div>
 
@@ -121,7 +135,7 @@ export function ReportsPage() {
         <Card className="col-span-2">
           <h2 className="text-[16px] font-bold text-ink">Cleaning Heatmap</h2>
           <p className="mt-0.5 text-[13px] text-ink-secondary">
-            Areas requiring the most cleaning attention
+            See which areas need cleaning most often.
           </p>
           <div className="mt-4">
             <CleaningHeatmap zones={heatZones} />
@@ -129,12 +143,8 @@ export function ReportsPage() {
         </Card>
 
         <Card>
-          <h2 className="text-[16px] font-bold text-ink">
-            Coverage Performance
-          </h2>
-          <p className="mt-0.5 text-[13px] text-ink-secondary">
-            Last 7 days · {range}
-          </p>
+          <h2 className="text-[16px] font-bold text-ink">Coverage Trend</h2>
+          <p className="mt-0.5 text-[13px] text-ink-secondary">Last 7 days · {range}</p>
           <div className="mt-4 h-[280px]">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart
@@ -147,23 +157,9 @@ export function ReportsPage() {
                     <stop offset="100%" stopColor="#1769E0" stopOpacity={0} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid
-                  stroke="#E7ECF3"
-                  strokeDasharray="3 3"
-                  vertical={false}
-                />
-                <XAxis
-                  dataKey="day"
-                  tick={{ fontSize: 12, fill: '#98A2B3' }}
-                  axisLine={false}
-                  tickLine={false}
-                />
-                <YAxis
-                  domain={[80, 100]}
-                  tick={{ fontSize: 12, fill: '#98A2B3' }}
-                  axisLine={false}
-                  tickLine={false}
-                />
+                <CartesianGrid stroke="#E7ECF3" strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="day" tick={{ fontSize: 12, fill: '#98A2B3' }} axisLine={false} tickLine={false} />
+                <YAxis domain={[80, 100]} tick={{ fontSize: 12, fill: '#98A2B3' }} axisLine={false} tickLine={false} />
                 <Tooltip
                   formatter={(value) => [`${value}%`, 'Coverage']}
                   contentStyle={{
@@ -195,19 +191,47 @@ export function ReportsPage() {
         </Card>
       </div>
 
+      {/* Recommended actions */}
+      <div className="mt-4">
+        <div className="mb-3 flex items-center gap-2">
+          <Lightbulb size={17} className="text-brand" />
+          <h2 className="text-[16px] font-bold text-ink">Recommended Actions</h2>
+        </div>
+        <div className="grid grid-cols-3 gap-4">
+          {recommendations.map((rec, i) => (
+            <Card key={i} className="flex flex-col">
+              <div className="flex items-start gap-3">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-app">
+                  {rec.icon}
+                </span>
+                <div className="min-w-0">
+                  <p className="text-[13.5px] font-semibold leading-snug text-ink">{rec.title}</p>
+                  <p className="mt-1 text-[12.5px] leading-snug text-ink-secondary">{rec.body}</p>
+                </div>
+              </div>
+              <Button
+                variant="secondary"
+                size="sm"
+                className="mt-4 w-full"
+                onClick={rec.onAction}
+              >
+                {rec.action}
+              </Button>
+            </Card>
+          ))}
+        </div>
+      </div>
+
       {/* Completed report */}
       <Card className="mt-4">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <div className="flex items-center gap-3">
-              <h2 className="text-[17px] font-bold text-ink">
-                Level 1 Daily Cleaning
-              </h2>
+              <h2 className="text-[17px] font-bold text-ink">Level 1 Daily Cleaning</h2>
               <StatusBadge status="completed" />
             </div>
             <p className="mt-1 text-[13px] text-ink-secondary">
-              Robot: <span className="font-semibold text-ink">CleanBot 01</span>{' '}
-              · {range} · May 20, 2025
+              Robot: <span className="font-semibold text-ink">CleanBot 01</span> · {range} · May 20, 2025
             </p>
           </div>
           <div className="flex gap-2.5">
@@ -215,29 +239,21 @@ export function ReportsPage() {
               variant="secondary"
               icon={<FileDown size={15} />}
               onClick={() =>
-                showToast(
-                  'info',
-                  'Report downloaded',
-                  'report-level1-daily-clean.pdf (demo)',
-                )
+                showToast('info', 'Report downloaded', 'report-level1-daily-clean.pdf (demo)')
               }
             >
               Download Report
             </Button>
-              <Button
-                variant="secondary"
-                icon={<RotateCcw size={15} />}
-                onClick={() => openTaskModal('CB01')}
-              >
-                Schedule Again
-              </Button>
+            <Button
+              variant="secondary"
+              icon={<RotateCcw size={15} />}
+              onClick={() => openTaskModal('CB01')}
+            >
+              Schedule Again
+            </Button>
             <Button
               onClick={() =>
-                showToast(
-                  'success',
-                  'Report opened',
-                  'Showing the full Level 1 Daily Cleaning report.',
-                )
+                showToast('success', 'Report opened', 'Showing the full Level 1 Daily Cleaning report.')
               }
             >
               View Details
@@ -271,18 +287,12 @@ function ReportStat({
 }) {
   return (
     <Card className="flex items-center gap-3">
-      <div
-        className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${tile}`}
-      >
+      <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${tile}`}>
         {icon}
       </div>
       <div className="min-w-0">
-        <p className="text-[11.5px] font-medium leading-tight text-ink-secondary">
-          {label}
-        </p>
-        <p className="mt-0.5 text-[18px] font-bold leading-tight text-ink">
-          {value}
-        </p>
+        <p className="text-[11.5px] font-medium leading-tight text-ink-secondary">{label}</p>
+        <p className="mt-0.5 text-[18px] font-bold leading-tight text-ink">{value}</p>
       </div>
     </Card>
   )
@@ -300,11 +310,7 @@ function ReportFact({
   return (
     <div className="rounded-xl bg-app px-4 py-3">
       <p className="text-[11.5px] font-medium text-ink-secondary">{label}</p>
-      <p
-        className={`mt-1 text-[16px] font-bold ${
-          highlight ? 'text-brand-dark' : 'text-ink'
-        }`}
-      >
+      <p className={`mt-1 text-[16px] font-bold ${highlight ? 'text-brand-dark' : 'text-ink'}`}>
         {value}
       </p>
     </div>

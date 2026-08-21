@@ -132,7 +132,7 @@ export function LevelOneFloorPlan() {
       </g>
       {/* No-go / restricted zone */}
       <g>
-        <title>Storage · Restricted Area · Robot entry disabled</title>
+        <title>Restricted Area · Robot entry disabled</title>
         <rect
           x={254}
           y={234}
@@ -144,9 +144,9 @@ export function LevelOneFloorPlan() {
           strokeWidth={2}
         />
         <g transform="translate(328 300)">
-          <rect x={-62} y={-15} width={124} height={30} rx={15} fill="#FFFFFF" stroke="#E5484D" strokeWidth={1.5} />
+          <rect x={-70} y={-15} width={140} height={30} rx={15} fill="#FFFFFF" stroke="#E5484D" strokeWidth={1.5} />
           <text x={0} y={4} textAnchor="middle" fontSize={12} fontWeight={700} fill="#E5484D" fontFamily="Inter, sans-serif">
-            No-Go Zone
+            Restricted Area
           </text>
         </g>
       </g>

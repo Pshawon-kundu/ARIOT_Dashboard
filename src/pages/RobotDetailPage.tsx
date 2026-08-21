@@ -1,9 +1,10 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
   ArrowLeft,
   BatteryMedium,
   CalendarPlus,
+  ChevronDown,
   Clock,
   Droplets,
   History,
@@ -11,7 +12,6 @@ import {
   MapPin,
   Pause,
   Play,
-  Settings2,
   Square,
   Trash2,
   Wifi,
@@ -40,6 +40,7 @@ export function RobotDetailPage() {
   const navigate = useNavigate()
   const { robots, updateRobot, showToast, openTaskModal } = useApp()
   const [confirm, setConfirm] = useState<'stop' | 'dock' | null>(null)
+  const [showSettings, setShowSettings] = useState(false)
 
   const robot = robots.find((r) => r.id === id)
 
@@ -105,7 +106,7 @@ export function RobotDetailPage() {
       </Link>
 
       <div className="grid grid-cols-3 gap-4">
-        {/* Left column */}
+        {/* Left column: hero + large live map */}
         <div className="col-span-2 space-y-4">
           {/* Hero */}
           <Card>
@@ -116,9 +117,7 @@ export function RobotDetailPage() {
                 </span>
                 <div>
                   <div className="flex items-center gap-3">
-                    <h1 className="text-[22px] font-bold tracking-tight text-ink">
-                      {robot.name}
-                    </h1>
+                    <h1 className="text-[22px] font-bold tracking-tight text-ink">{robot.name}</h1>
                     <StatusBadge status={robot.status} />
                   </div>
                   <p className="mt-1 text-[13px] text-ink-secondary">
@@ -135,9 +134,49 @@ export function RobotDetailPage() {
                 </div>
               </div>
             </div>
+          </Card>
 
-            {/* Metrics */}
-            <div className="mt-6 grid grid-cols-4 gap-4 border-t border-line pt-5">
+          {/* Large live facility map */}
+          <FacilityMap title="Live Facility Map" />
+        </div>
+
+        {/* Right column: current cleaning + controls + maintenance */}
+        <div className="space-y-4">
+          {/* Current cleaning */}
+          <Card>
+            <h2 className="text-[16px] font-bold text-ink">Current Cleaning</h2>
+            {isCleaning ? (
+              <>
+                <div className="mt-3 rounded-xl border border-line bg-app/60 px-4 py-3.5">
+                  <p className="text-[14.5px] font-bold text-ink">{robot.currentTask}</p>
+                  <p className="mt-0.5 text-[12.5px] text-ink-secondary">{robot.location}</p>
+                </div>
+                <div className="mt-4">
+                  <div className="mb-1.5 flex justify-between text-[12.5px]">
+                    <span className="font-medium text-ink-secondary">Job progress</span>
+                    <span className="font-bold text-ink">{robot.progress}%</span>
+                  </div>
+                  <ProgressBar value={robot.progress} />
+                </div>
+                <div className="mt-4 flex items-center justify-between rounded-xl bg-brand-pale/60 px-4 py-2.5">
+                  <span className="flex items-center gap-2 text-[13px] font-medium text-ink-secondary">
+                    <Clock size={14} className="text-brand" />
+                    About
+                  </span>
+                  <span className="text-[15px] font-bold text-brand-dark">
+                    {robot.estimatedCompletion} remaining
+                  </span>
+                </div>
+              </>
+            ) : (
+              <p className="mt-3 rounded-xl bg-app/60 px-4 py-3.5 text-[13px] text-ink-secondary">
+                {robot.status === 'charging'
+                  ? 'This robot is charging and not cleaning right now.'
+                  : 'This robot is ready and not cleaning right now.'}
+              </p>
+            )}
+
+            <div className="mt-4 space-y-3 border-t border-line pt-4">
               <Metric label="Battery" value={`${robot.battery}%`} icon={<BatteryMedium size={14} className="text-success" />} bar={<ProgressBar value={robot.battery} color="bg-success" />} />
               <Metric label="Water" value={`${robot.water}%`} icon={<Droplets size={14} className="text-water" />} bar={<ProgressBar value={robot.water} color="bg-water" />} />
               <Metric
@@ -146,94 +185,61 @@ export function RobotDetailPage() {
                 icon={<Trash2 size={14} className="text-ink-secondary" />}
                 bar={<ProgressBar value={robot.wasteBin} color={robot.wasteBin >= 80 ? 'bg-danger' : 'bg-warning'} />}
               />
-              <Metric label="Job Progress" value={`${robot.progress}%`} icon={<Clock size={14} className="text-brand" />} bar={<ProgressBar value={robot.progress} />} />
             </div>
-          </Card>
 
-          {/* Live control / current task */}
-          <Card>
-            <div className="flex items-center justify-between">
-              <h2 className="text-[16px] font-bold text-ink">Live Robot Control</h2>
-              <StatusBadge status={robot.status} />
-            </div>
-            <div className="mt-3 flex items-center justify-between rounded-xl border border-line bg-app/60 px-5 py-4">
-              <div>
-                <p className="text-[15px] font-bold text-ink">{robot.currentTask}</p>
-                <p className="mt-0.5 text-[13px] text-ink-secondary">{robot.location}</p>
+            <div className="mt-4 border-t border-line pt-4">
+              <div className="flex items-center justify-between">
+                <p className="text-[13px] font-semibold text-ink-secondary">Cleaning Mode</p>
+                <StatusBadge
+                  status=""
+                  label={modes.find((m) => m.id === robot.cleaningMode)?.label ?? 'Standard'}
+                  tone="blue"
+                  dot={false}
+                />
               </div>
-              {isCleaning ? (
-                <div className="text-right">
-                  <p className="text-[13px] font-semibold text-ink-secondary">Finishes in about</p>
-                  <p className="text-[18px] font-bold text-brand-dark">{robot.estimatedCompletion}</p>
+
+              <button
+                type="button"
+                onClick={() => setShowSettings((v) => !v)}
+                className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg border border-line bg-white py-2.5 text-[13px] font-semibold text-ink-secondary transition-colors hover:bg-app"
+              >
+                {showSettings ? 'Hide cleaning settings' : 'Cleaning settings'}
+                <ChevronDown size={15} className={`transition-transform ${showSettings ? 'rotate-180' : ''}`} />
+              </button>
+
+              {showSettings && (
+                <div className="mt-3 space-y-4 animate-fade-in">
+                  <SettingRow label="Cleaning Mode">
+                    <Segmented
+                      options={modes.map((m) => m.label)}
+                      value={modes.find((m) => m.id === robot.cleaningMode)?.label ?? 'Standard'}
+                      onChange={(v) =>
+                        updateRobot(robot.id, { cleaningMode: modes.find((m) => m.label === v)!.id })
+                      }
+                    />
+                  </SettingRow>
+                  <SettingRow label="Water Usage">
+                    <Segmented
+                      options={intensities}
+                      value={robot.waterUsage ?? 'Standard'}
+                      onChange={(v) => updateRobot(robot.id, { waterUsage: v as IntensityOption })}
+                    />
+                  </SettingRow>
+                  <SettingRow label="Suction">
+                    <Segmented
+                      options={intensities}
+                      value={robot.suction ?? 'Standard'}
+                      onChange={(v) => updateRobot(robot.id, { suction: v as IntensityOption })}
+                    />
+                  </SettingRow>
                 </div>
-              ) : (
-                <StatusBadge status={robot.status} />
               )}
             </div>
-            {isCleaning && (
-              <div className="mt-4">
-                <div className="mb-1.5 flex justify-between text-[12.5px]">
-                  <span className="font-medium text-ink-secondary">Task progress</span>
-                  <span className="font-bold text-ink">{robot.progress}%</span>
-                </div>
-                <ProgressBar value={robot.progress} />
-              </div>
-            )}
-            <div className="mt-5">
-              <p className="mb-2 text-[13px] font-semibold text-ink-secondary">Live route</p>
-              <div className="overflow-hidden rounded-xl border border-line">
-                <FacilityMap />
-              </div>
-            </div>
           </Card>
 
-          {/* Cleaning settings */}
+          {/* Live controls */}
           <Card>
-            <div className="flex items-center gap-2">
-              <Settings2 size={17} className="text-brand" />
-              <h2 className="text-[16px] font-bold text-ink">Cleaning Settings</h2>
-            </div>
-            <p className="mt-1 text-[13px] text-ink-secondary">
-              Simple controls applied to the next cleaning job.
-            </p>
-
-            <div className="mt-4 space-y-5">
-              <SettingRow label="Cleaning Mode">
-                <Segmented
-                  options={modes.map((m) => m.label)}
-                  value={
-                    modes.find((m) => m.id === robot.cleaningMode)?.label ?? 'Standard'
-                  }
-                  onChange={(v) =>
-                    updateRobot(robot.id, {
-                      cleaningMode: modes.find((m) => m.label === v)!.id,
-                    })
-                  }
-                />
-              </SettingRow>
-              <SettingRow label="Water Usage">
-                <Segmented
-                  options={intensities}
-                  value={robot.waterUsage ?? 'Standard'}
-                  onChange={(v) => updateRobot(robot.id, { waterUsage: v as IntensityOption })}
-                />
-              </SettingRow>
-              <SettingRow label="Suction">
-                <Segmented
-                  options={intensities}
-                  value={robot.suction ?? 'Standard'}
-                  onChange={(v) => updateRobot(robot.id, { suction: v as IntensityOption })}
-                />
-              </SettingRow>
-            </div>
-          </Card>
-        </div>
-
-        {/* Right column */}
-        <div className="space-y-4">
-          {/* Actions */}
-          <Card>
-            <h2 className="text-[16px] font-bold text-ink">Actions</h2>
+            <h2 className="text-[16px] font-bold text-ink">Live Controls</h2>
             <div className="mt-4 space-y-2.5">
               {robot.status === 'paused' ? (
                 <Button fullWidth icon={<Play size={16} />} onClick={handleResume}>
@@ -320,7 +326,7 @@ export function RobotDetailPage() {
         onConfirm={handleStop}
         danger
         title={`Stop ${robot.name}?`}
-        description="CleanBot 01 will stop cleaning and wait for your next instruction."
+        description={`${robot.name} will stop cleaning and wait for your next instruction.`}
         confirmLabel="Stop Cleaning"
         icon={<Square size={20} />}
       />
@@ -345,16 +351,13 @@ function Metric({
 }: {
   label: string
   value: string
-  icon: React.ReactNode
-  bar: React.ReactNode
+  icon: ReactNode
+  bar: ReactNode
 }) {
   return (
     <div>
       <div className="flex items-center justify-between text-[12.5px]">
-        <span className="flex items-center gap-1.5 font-medium text-ink-secondary">
-          {icon}
-          {label}
-        </span>
+        <span className="flex items-center gap-1.5 font-medium text-ink-secondary">{icon}{label}</span>
         <span className="font-bold text-ink">{value}</span>
       </div>
       <div className="mt-2">{bar}</div>
@@ -362,7 +365,7 @@ function Metric({
   )
 }
 
-function SettingRow({ label, children }: { label: string; children: React.ReactNode }) {
+function SettingRow({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
       <span className="text-[13px] font-semibold text-ink">{label}</span>

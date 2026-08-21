@@ -18,7 +18,7 @@ export function MapLegend() {
       />
       <LegendItem
         marker={<span className="h-3.5 w-3.5 rounded-[3px] border border-[#9FC7FF] bg-[#DCEBFF]" />}
-        text="In Progress"
+        text="Cleaning Now"
       />
       <LegendItem
         marker={
@@ -30,7 +30,7 @@ export function MapLegend() {
             }}
           />
         }
-        text="Uncleaned"
+        text="Not Yet Cleaned"
       />
       <LegendItem
         marker={<span className="h-[2px] w-6 rounded-full bg-[#1672EA]" />}
@@ -46,7 +46,7 @@ export function MapLegend() {
             }}
           />
         }
-        text="No-Go Zone"
+        text="Restricted"
       />
     </div>
   )
