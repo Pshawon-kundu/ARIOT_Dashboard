@@ -14,6 +14,7 @@ import {
   Play,
   Square,
   Trash2,
+  TriangleAlert,
   Wifi,
   Wrench,
 } from 'lucide-react'
@@ -25,8 +26,23 @@ import { ConfirmModal } from '../components/ui/ConfirmModal'
 import { EmptyState } from '../components/ui/EmptyState'
 import { FacilityMap } from '../components/map/FacilityMap'
 import { RobotVisual } from '../components/robots/RobotVisual'
+import { CurrentSituationCard } from '../components/situation/CurrentSituationCard'
+import { CleanBotDecisions } from '../components/situation/CleanBotDecisions'
+import { WhatCleanBotNoticed } from '../components/situation/WhatCleanBotNoticed'
+import { AutomaticCleaningBadge } from '../components/situation/AutomaticCleaningBadge'
+import { detectionMeta } from '../components/situation/awareness'
 import { useApp } from '../context/AppContext'
-import type { CleaningMode, IntensityOption } from '../types'
+import { getRobotSituation, useApi } from '../services/api'
+import type { ApiSituation } from '../services/api'
+import type {
+  AutonomousDecision,
+  CleaningDetection,
+  CleaningMode,
+  DetectionType,
+  IntensityOption,
+  Robot,
+  RobotSituation,
+} from '../types'
 
 const modes: { id: CleaningMode; label: string }[] = [
   { id: 'standard', label: 'Standard' },
@@ -35,14 +51,162 @@ const modes: { id: CleaningMode; label: string }[] = [
 ]
 const intensities: IntensityOption[] = ['Low', 'Standard', 'High']
 
+/* ===== Map backend data into the shapes the UI components expect ===== */
+
+function mapDetectionType(t?: string): DetectionType {
+  switch (t) {
+    case 'heavy_dirt':
+      return 'dirt'
+    case 'spill':
+      return 'spill'
+    case 'obstacle':
+      return 'obstacle'
+    default:
+      return 'dirt'
+  }
+}
+
+function mapApiRobotToRobot(api: { id: number; name: string; model?: string; status?: string }, sit?: ApiSituation): Robot {
+  return {
+    id: String(api.id),
+    name: api.name,
+    model: api.model ?? '',
+    status: api.status ?? 'ready',
+    location: sit?.current_situation?.location ?? 'Unknown',
+    level: 1,
+    battery: 0,
+    water: 0,
+    wasteBin: 0,
+    progress: 0,
+    currentTask: 'Live cleaning task',
+    estimatedCompletion: '—',
+    connectivity: 'Online',
+    lastCommunication: '',
+    lastMaintenance: '',
+    nextInspection: '',
+    operatingHours: 0,
+  }
+}
+
+function mapSituation(sit: ApiSituation, robotId: string): RobotSituation {
+  const cs = sit.current_situation
+  return {
+    robotId,
+    path: cs.location ?? '—',
+    floorCondition: cs.floor_condition ?? 'Unknown',
+    nearbyObstacle: cs.nearby_obstacle ?? 'None',
+    restrictedArea: cs.restricted_area ?? 'None',
+    response: 'CleanBot is continuously monitoring and adjusting on its own.',
+  }
+}
+
+function mapDetections(sit: ApiSituation, robotId: string): CleaningDetection[] {
+  return sit.detections.map((d, i) => {
+    const type = mapDetectionType(d.type)
+    return {
+      id: String(d.id ?? i),
+      robotId,
+      type,
+      title: detectionMeta[type].label,
+      location: d.location ?? '—',
+      timestamp: d.created_at ?? '',
+      response: d.response ?? d.description ?? 'CleanBot responded automatically.',
+      outcome: d.handled_automatically ? 'auto' : 'monitoring',
+    }
+  })
+}
+
+function mapDecisions(sit: ApiSituation, robotId: string): AutonomousDecision[] {
+  return sit.decisions.map((dec, i) => ({
+    id: String(i),
+    robotId,
+    time: '',
+    notice: dec.action,
+    location: dec.reason ?? '',
+    response: dec.action,
+    outcome: 'auto',
+    why: dec.reason,
+  }))
+}
+
+function ApiPanel({
+  loading,
+  error,
+  isEmpty,
+  empty,
+  children,
+}: {
+  loading: boolean
+  error: string | null
+  isEmpty?: boolean
+  empty: ReactNode
+  children: ReactNode
+}) {
+  if (loading) {
+    return (
+      <Card>
+        <div className="py-10 text-center text-[13px] text-ink-secondary">
+          Loading live data…
+        </div>
+      </Card>
+    )
+  }
+  if (error) {
+    return (
+      <Card>
+        <div className="py-10 text-center text-[13px] text-danger">
+          Couldn’t load live data. {error}
+        </div>
+      </Card>
+    )
+  }
+  if (isEmpty) {
+    return <Card>{empty}</Card>
+  }
+  return <>{children}</>
+}
+
 export function RobotDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const { robots, updateRobot, showToast, openTaskModal } = useApp()
+  const { robots, maintenance, updateRobot, showToast, openTaskModal } = useApp()
   const [confirm, setConfirm] = useState<'stop' | 'dock' | null>(null)
   const [showSettings, setShowSettings] = useState(false)
 
-  const robot = robots.find((r) => r.id === id)
+  const { data: situation, loading, error } = useApi(
+    () => getRobotSituation(id ?? ''),
+    [id],
+  )
+
+  const localRobot = robots.find((r) => r.id === id)
+  const apiRobot = situation?.robot
+  const robotId = apiRobot ? String(apiRobot.id) : id ?? ''
+  const robot: Robot | undefined =
+    localRobot ?? (apiRobot ? mapApiRobotToRobot(apiRobot, situation ?? undefined) : undefined)
+
+  const apiSituation = situation ? mapSituation(situation, robotId) : undefined
+  const apiDetections = situation ? mapDetections(situation, robotId) : []
+  const apiDecisions = situation ? mapDecisions(situation, robotId) : []
+
+  if (loading && !localRobot) {
+    return (
+      <Card>
+        <div className="py-16 text-center text-[13px] text-ink-secondary">
+          Loading robot…
+        </div>
+      </Card>
+    )
+  }
+
+  if (error && !localRobot) {
+    return (
+      <Card>
+        <div className="py-16 text-center text-[13px] text-danger">
+          Couldn’t load this robot. {error}
+        </div>
+      </Card>
+    )
+  }
 
   if (!robot) {
     return (
@@ -62,6 +226,15 @@ export function RobotDetailPage() {
   }
 
   const isCleaning = robot.status === 'cleaning' || robot.status === 'paused'
+  const around = undefined
+  const robotMaintenance = maintenance.filter((m) => m.robotId === robot.id)
+
+  const needsAttention = robot.water < 30 || robot.wasteBin > 80 || robot.status === 'attention'
+  const attentionMessage = (() => {
+    if (robot.water < 30) return `Water is running low — ${robot.water}% remaining. Refill before the next cleaning job.`
+    if (robot.wasteBin > 80) return `The waste bin is nearly full — ${robot.wasteBin}% full. Empty it before the next cleaning job.`
+    return 'This robot needs a quick check before its next job.'
+  })()
 
   const handleStop = () => {
     updateRobot(robot.id, {
@@ -106,9 +279,7 @@ export function RobotDetailPage() {
       </Link>
 
       <div className="grid grid-cols-3 gap-4">
-        {/* Left column: hero + large live map */}
         <div className="col-span-2 space-y-4">
-          {/* Hero */}
           <Card>
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="flex items-center gap-5">
@@ -136,13 +307,10 @@ export function RobotDetailPage() {
             </div>
           </Card>
 
-          {/* Large live facility map */}
           <FacilityMap title="Live Facility Map" />
         </div>
 
-        {/* Right column: current cleaning + controls + maintenance */}
         <div className="space-y-4">
-          {/* Current cleaning */}
           <Card>
             <h2 className="text-[16px] font-bold text-ink">Current Cleaning</h2>
             {isCleaning ? (
@@ -198,17 +366,24 @@ export function RobotDetailPage() {
                 />
               </div>
 
+              <div className="mt-3">
+                <AutomaticCleaningBadge />
+              </div>
+
               <button
                 type="button"
                 onClick={() => setShowSettings((v) => !v)}
                 className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg border border-line bg-white py-2.5 text-[13px] font-semibold text-ink-secondary transition-colors hover:bg-app"
               >
-                {showSettings ? 'Hide cleaning settings' : 'Cleaning settings'}
+                {showSettings ? 'Hide advanced settings' : 'Advanced settings'}
                 <ChevronDown size={15} className={`transition-transform ${showSettings ? 'rotate-180' : ''}`} />
               </button>
 
               {showSettings && (
                 <div className="mt-3 space-y-4 animate-fade-in">
+                  <p className="text-[12px] leading-snug text-ink-muted">
+                    Optional manual override. CleanBot normally adjusts these on its own.
+                  </p>
                   <SettingRow label="Cleaning Mode">
                     <Segmented
                       options={modes.map((m) => m.label)}
@@ -237,9 +412,96 @@ export function RobotDetailPage() {
             </div>
           </Card>
 
-          {/* Live controls */}
+          <ApiPanel
+            loading={loading}
+            error={error}
+            isEmpty={!apiSituation}
+            empty={
+              <EmptyState
+                icon={<TriangleAlert size={22} />}
+                title="No situation data"
+                description="CleanBot hasn't reported a current situation for this robot yet."
+              />
+            }
+          >
+            <CurrentSituationCard
+              robot={robot}
+              situation={apiSituation!}
+              around={around}
+              showRobot={false}
+            />
+          </ApiPanel>
+
+          {needsAttention && (
+            <Card className="border-warning/40 bg-warning-pale/40">
+              <div className="flex items-start gap-3">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-warning-pale text-warning">
+                  <TriangleAlert size={18} />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <h2 className="text-[16px] font-bold text-ink">Needs Your Attention</h2>
+                  <p className="mt-1 text-[12.5px] leading-snug text-ink-secondary">
+                    {attentionMessage}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => navigate('/alerts')}
+                    className="mt-2.5 w-full rounded-lg bg-white py-1.5 text-[12.5px] font-semibold text-brand ring-1 ring-line transition-colors hover:bg-brand-pale"
+                  >
+                    View Alerts
+                  </button>
+                </div>
+              </div>
+            </Card>
+          )}
+
+          <ApiPanel
+            loading={loading}
+            error={error}
+            isEmpty={false}
+            empty={<></>}
+          >
+            <WhatCleanBotNoticed detections={apiDetections} />
+          </ApiPanel>
+
+          <ApiPanel
+            loading={loading}
+            error={error}
+            isEmpty={apiDecisions.length === 0}
+            empty={
+              <EmptyState
+                icon={<TriangleAlert size={22} />}
+                title="No recent decisions"
+                description="CleanBot hasn't needed to change its behavior for this robot yet."
+              />
+            }
+          >
+            <CleanBotDecisions decisions={apiDecisions} />
+          </ApiPanel>
+
           <Card>
-            <h2 className="text-[16px] font-bold text-ink">Live Controls</h2>
+            <div className="flex items-center gap-2">
+              <Wrench size={17} className="text-warning" />
+              <h2 className="text-[16px] font-bold text-ink">Robot Health</h2>
+            </div>
+            <div className="mt-4 space-y-3">
+              <HealthRow label="Battery" value={`${robot.battery}%`} tone={robot.battery > 30 ? 'good' : 'warn'} />
+              <HealthRow label="Water" value={`${robot.water}%`} tone={robot.water > 30 ? 'good' : 'warn'} />
+              <HealthRow label="Waste Bin" value={`${robot.wasteBin}% full`} tone={robot.wasteBin < 80 ? 'good' : 'warn'} />
+              <HealthRow
+                label="Main Brush"
+                value={robotMaintenance[0]?.status === 'Inspected' ? 'Good' : 'Check recommended'}
+                tone={robotMaintenance[0]?.status === 'Inspected' ? 'good' : 'warn'}
+              />
+              <HealthRow label="Connectivity" value={robot.connectivity} tone={robot.connectivity === 'Online' ? 'good' : 'warn'} />
+            </div>
+          </Card>
+
+          <Card>
+            <h2 className="text-[16px] font-bold text-ink">Controls</h2>
+            <p className="mt-1 text-[12px] text-ink-secondary">
+              CleanBot handles normal operation itself. Use these for exceptions.
+            </p>
             <div className="mt-4 space-y-2.5">
               {robot.status === 'paused' ? (
                 <Button fullWidth icon={<Play size={16} />} onClick={handleResume}>
@@ -302,24 +564,9 @@ export function RobotDetailPage() {
               </Button>
             </div>
           </Card>
-
-          {/* Maintenance */}
-          <Card>
-            <div className="flex items-center gap-2">
-              <Wrench size={17} className="text-warning" />
-              <h2 className="text-[16px] font-bold text-ink">Maintenance</h2>
-            </div>
-            <div className="mt-4 space-y-3.5">
-              <DetailRow label="Last maintenance" value={robot.lastMaintenance} />
-              <DetailRow label="Next recommended inspection" value={robot.nextInspection} valueClass="text-warning" />
-              <DetailRow label="Operating hours" value={`${robot.operatingHours}h`} />
-              <DetailRow label="Last communication" value={robot.lastCommunication} />
-            </div>
-          </Card>
         </div>
       </div>
 
-      {/* Confirmations */}
       <ConfirmModal
         open={confirm === 'stop'}
         onClose={() => setConfirm(null)}
@@ -365,6 +612,29 @@ function Metric({
   )
 }
 
+function HealthRow({
+  label,
+  value,
+  tone,
+}: {
+  label: string
+  value: string
+  tone: 'good' | 'warn'
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4">
+      <span className="text-[13px] text-ink-secondary">{label}</span>
+      <span
+        className={`text-[13px] font-semibold ${
+          tone === 'good' ? 'text-[#18794E]' : 'text-warning'
+        }`}
+      >
+        {value}
+      </span>
+    </div>
+  )
+}
+
 function SettingRow({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -397,23 +667,6 @@ function Segmented({
           {opt}
         </button>
       ))}
-    </div>
-  )
-}
-
-function DetailRow({
-  label,
-  value,
-  valueClass = 'text-ink',
-}: {
-  label: string
-  value: string
-  valueClass?: string
-}) {
-  return (
-    <div className="flex items-center justify-between gap-4">
-      <span className="text-[13px] text-ink-secondary">{label}</span>
-      <span className={`text-[13px] font-semibold ${valueClass}`}>{value}</span>
     </div>
   )
 }

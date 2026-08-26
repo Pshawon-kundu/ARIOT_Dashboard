@@ -10,6 +10,8 @@ import {
   RotateCcw,
   Sparkles,
   Target,
+  TriangleAlert,
+  Wrench,
 } from 'lucide-react'
 import {
   Area,
@@ -26,12 +28,12 @@ import { Button } from '../components/ui/Button'
 import { StatusBadge } from '../components/ui/StatusBadge'
 import { CleaningHeatmap } from '../components/map/CleaningHeatmap'
 import { useApp } from '../context/AppContext'
-import { coverageWeek, heatZones } from '../data/mockData'
+import { coverageWeek, heatZones, frequentDirtyAreas, reportDetections } from '../data/mockData'
 
 const dateFilters = ['Today', '7 Days', '30 Days', 'Custom']
 
 export function ReportsPage() {
-  const { openTaskModal, showToast } = useApp()
+  const { openTaskModal, showToast, maintenance } = useApp()
   const navigate = useNavigate()
   const [range, setRange] = useState('7 Days')
 
@@ -135,7 +137,7 @@ export function ReportsPage() {
         <Card className="col-span-2">
           <h2 className="text-[16px] font-bold text-ink">Cleaning Heatmap</h2>
           <p className="mt-0.5 text-[13px] text-ink-secondary">
-            See which areas need cleaning most often.
+            See where dirt was detected most often.
           </p>
           <div className="mt-4">
             <CleaningHeatmap zones={heatZones} />
@@ -189,6 +191,82 @@ export function ReportsPage() {
             <span className="text-[15px] font-bold text-[#18794E]">93.6%</span>
           </div>
         </Card>
+      </div>
+
+      {/* Frequently dirty areas */}
+      <div className="mt-4">
+        <div className="mb-3 flex items-center gap-2">
+          <Flame size={17} className="text-warning" />
+          <h2 className="text-[16px] font-bold text-ink">Frequently Dirty Areas</h2>
+        </div>
+        <div className="grid grid-cols-3 gap-4">
+          {frequentDirtyAreas.map((area) => (
+            <Card key={area.rank}>
+              <div className="flex items-center justify-between">
+                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-warning-pale text-[14px] font-bold text-warning">
+                  {area.rank}
+                </span>
+                <span className="rounded-full bg-app px-2.5 py-1 text-[11px] font-semibold text-ink-secondary">
+                  {area.detail}
+                </span>
+              </div>
+              <p className="mt-3 text-[15px] font-bold text-ink">{area.name}</p>
+              <p className="mt-0.5 text-[12.5px] text-ink-secondary">{area.events}</p>
+            </Card>
+          ))}
+        </div>
+      </div>
+
+      {/* What CleanBot noticed in the last completed job */}
+      <div className="mt-4">
+        <div className="mb-3 flex items-center gap-2">
+          <Sparkles size={17} className="text-brand" />
+          <h2 className="text-[16px] font-bold text-ink">What CleanBot Noticed</h2>
+        </div>
+        <Card>
+          <p className="text-[13px] text-ink-secondary">
+            Level 1 Daily Cleaning · Completed · CleanBot found and handled these automatically.
+          </p>
+          <div className="mt-4 grid grid-cols-3 gap-3 sm:grid-cols-6">
+            <DetectionFact label="Dirt hotspots" value={String(reportDetections.dirtHotspots)} />
+            <DetectionFact label="Spills" value={String(reportDetections.spills)} />
+            <DetectionFact label="Obstacles" value={String(reportDetections.obstacles)} />
+            <DetectionFact label="Extra passes" value={String(reportDetections.extraPasses)} />
+            <DetectionFact label="Adjustments" value={String(reportDetections.adjustments)} />
+            <DetectionFact label="Your action" value={reportDetections.intervention} />
+          </div>
+        </Card>
+      </div>
+
+      {/* Maintenance insights */}
+      <div className="mt-4">
+        <div className="mb-3 flex items-center gap-2">
+          <Wrench size={17} className="text-warning" />
+          <h2 className="text-[16px] font-bold text-ink">Maintenance Needed</h2>
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          {maintenance.map((item) => (
+            <Card key={item.id}>
+              <div className="flex items-center gap-3">
+                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-warning-pale text-warning">
+                  <Wrench size={18} />
+                </span>
+                <div>
+                  <p className="text-[14.5px] font-bold text-ink">{item.robotName}</p>
+                  <p className="text-xs text-ink-muted">{item.part}</p>
+                </div>
+                <StatusBadge
+                  status={item.status.toLowerCase()}
+                  tone={item.status === 'Inspected' ? 'green' : 'orange'}
+                />
+              </div>
+              <p className="mt-3 flex items-start gap-2 text-[13px] leading-relaxed text-ink-secondary">
+                <TriangleAlert size={14} className="mt-0.5 shrink-0 text-warning" />
+                {item.suggestedAction}
+              </p>
+            </Card>
+          ))}
+        </div>
       </div>
 
       {/* Recommended actions */}
@@ -247,7 +325,7 @@ export function ReportsPage() {
             <Button
               variant="secondary"
               icon={<RotateCcw size={15} />}
-              onClick={() => openTaskModal('CB01')}
+              onClick={() => openTaskModal()}
             >
               Schedule Again
             </Button>
@@ -313,6 +391,21 @@ function ReportFact({
       <p className={`mt-1 text-[16px] font-bold ${highlight ? 'text-brand-dark' : 'text-ink'}`}>
         {value}
       </p>
+    </div>
+  )
+}
+
+function DetectionFact({
+  label,
+  value,
+}: {
+  label: string
+  value: string
+}) {
+  return (
+    <div className="rounded-xl border border-line bg-app/50 px-3 py-3 text-center">
+      <p className="text-[20px] font-bold text-ink">{value}</p>
+      <p className="mt-0.5 text-[11px] font-medium text-ink-secondary">{label}</p>
     </div>
   )
 }

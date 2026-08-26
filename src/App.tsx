@@ -3,6 +3,7 @@ import { AppProvider } from './context/AppContext'
 import { AppSidebar } from './components/layout/AppSidebar'
 import { GlobalHeader } from './components/layout/GlobalHeader'
 import { ToastContainer } from './components/ui/Toast'
+import { AppSplashScreen } from './components/startup/AppSplashScreen'
 import { CleaningTaskModal } from './components/cleaning/CleaningTaskModal'
 import { OverviewPage } from './pages/OverviewPage'
 import { RobotsPage } from './pages/RobotsPage'
@@ -36,6 +37,7 @@ export default function App() {
         </div>
         <CleaningTaskModal />
         <ToastContainer />
+        <AppSplashScreen />
       </div>
     </AppProvider>
   )

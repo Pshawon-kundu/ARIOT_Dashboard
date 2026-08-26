@@ -78,6 +78,7 @@ export function RobotsPage() {
     addRobot({
       id,
       name: newName.trim(),
+      model: 'CB-X2',
       status: 'ready',
       location: 'Charging Dock',
       level: 1,

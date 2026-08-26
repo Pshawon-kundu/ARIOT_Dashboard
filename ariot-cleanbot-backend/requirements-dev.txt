@@ -1,0 +1,4 @@
+# Development / testing dependencies (not required in production)
+-r requirements.txt
+
+pytest

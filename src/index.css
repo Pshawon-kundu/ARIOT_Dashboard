@@ -84,3 +84,77 @@
 .animate-bar {
   animation: growBar 0.9s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
+
+/* ===== ARIOT startup splash screen ===== */
+@keyframes splashLogo {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes splashRise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes splashFade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes splashPulse {
+  0%,
+  100% {
+    opacity: 0.25;
+    transform: scale(0.8);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.splash-logo {
+  animation: splashLogo 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.splash-title {
+  animation: splashRise 0.45s ease-out 0.35s both;
+}
+.splash-motto {
+  animation: splashRise 0.45s ease-out 0.55s both;
+}
+.splash-dots {
+  animation: splashRise 0.4s ease-out 0.9s both;
+}
+.splash-dot {
+  animation: splashPulse 1s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .splash-logo,
+  .splash-title,
+  .splash-motto,
+  .splash-dots {
+    animation: splashFade 0.3s ease-out both;
+    transform: none;
+  }
+  .splash-dot {
+    animation: none;
+    opacity: 0.6;
+  }
+}

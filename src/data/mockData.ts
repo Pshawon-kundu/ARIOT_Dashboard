@@ -1,11 +1,17 @@
 import type {
   AlertItem,
+  AutonomousDecision,
+  AroundCleanBot,
+  CleaningDetection,
   CleaningReport,
   CleaningTask,
   FacilityZone,
+  FrequentDirtyArea,
   MaintenanceItem,
+  MapDetection,
   NoGoZone,
   Robot,
+  RobotSituation,
   ZoneStatus,
 } from '../types'
 
@@ -13,6 +19,7 @@ export const robots: Robot[] = [
   {
     id: 'CB01',
     name: 'CleanBot 01',
+    model: 'CB-X2',
     status: 'cleaning',
     location: 'Level 1 - East Wing',
     level: 1,
@@ -34,6 +41,7 @@ export const robots: Robot[] = [
   {
     id: 'CB02',
     name: 'CleanBot 02',
+    model: 'CB-X2',
     status: 'charging',
     location: 'Charging Dock',
     level: 1,
@@ -56,6 +64,7 @@ export const robots: Robot[] = [
   {
     id: 'CB03',
     name: 'CleanBot 03',
+    model: 'CB-X2',
     status: 'ready',
     location: 'Level 2 - Storage',
     level: 2,
@@ -337,3 +346,169 @@ export const noGoZones: NoGoZone[] = [
   { id: 'NG1', floor: 'Level 1', name: 'Restricted Area', x: 254, y: 234, w: 148, h: 140 },
   { id: 'NG2', floor: 'Level 2', name: 'Restricted Area', x: 420, y: 238, w: 130, h: 120 },
 ]
+
+/* ===== Autonomous awareness (what CleanBot detects and decides) ===== */
+
+export const robotSituations: Record<string, RobotSituation> = {
+  CB01: {
+    robotId: 'CB01',
+    path: 'Clear',
+    floorCondition: 'Heavy dirt detected',
+    nearbyObstacle: 'None blocking route',
+    restrictedArea: 'Safe distance maintained',
+    response: 'Cleaning intensity increased automatically',
+  },
+  CB02: {
+    robotId: 'CB02',
+    path: 'At charging dock',
+    floorCondition: 'Dock area clean',
+    nearbyObstacle: 'None',
+    restrictedArea: 'Safe distance maintained',
+    response: 'Charging and preparing for next job',
+  },
+  CB03: {
+    robotId: 'CB03',
+    path: 'Clear',
+    floorCondition: 'Normal',
+    nearbyObstacle: 'None',
+    restrictedArea: 'Safe distance maintained',
+    response: 'Ready and available for cleaning',
+  },
+}
+
+export const aroundCleanBot: Record<string, AroundCleanBot> = {
+  CB01: {
+    robotId: 'CB01',
+    ahead: 'Route clear',
+    left: 'Restricted room',
+    right: 'Clear',
+    nearby: 'Heavy dirt',
+    floor: 'Heavy dirt',
+  },
+  CB02: {
+    robotId: 'CB02',
+    ahead: 'Charging dock',
+    left: 'Clear',
+    right: 'Clear',
+    nearby: 'Storage area',
+    floor: 'Normal',
+  },
+  CB03: {
+    robotId: 'CB03',
+    ahead: 'Clear',
+    left: 'Clear',
+    right: 'Clear',
+    nearby: 'Clear',
+    floor: 'Normal',
+  },
+}
+
+export const detections: CleaningDetection[] = [
+  {
+    id: 'D1',
+    robotId: 'CB01',
+    type: 'dirt',
+    title: 'Heavy dirt',
+    location: 'East Wing',
+    timestamp: 'Just now',
+    response: 'Cleaning intensity increased automatically.',
+    outcome: 'auto',
+  },
+  {
+    id: 'D2',
+    robotId: 'CB01',
+    type: 'spill',
+    title: 'Small spill',
+    location: 'Main Corridor',
+    timestamp: '3 min ago',
+    response: 'CleanBot slowed down and cleaned the area more carefully.',
+    outcome: 'auto',
+  },
+  {
+    id: 'D3',
+    robotId: 'CB01',
+    type: 'obstacle',
+    title: 'Temporary obstacle',
+    location: 'Corridor A',
+    timestamp: '5 min ago',
+    response: 'Route adjusted automatically.',
+    outcome: 'auto',
+  },
+  {
+    id: 'D4',
+    robotId: 'CB01',
+    type: 'solid-waste',
+    title: 'Solid waste',
+    location: 'Lobby entrance',
+    timestamp: '8 min ago',
+    response: 'Area added to an extra cleaning pass.',
+    outcome: 'auto',
+  },
+]
+
+export const decisions: AutonomousDecision[] = [
+  {
+    id: 'AD1',
+    robotId: 'CB01',
+    time: '10:42 AM',
+    notice: 'Heavy dirt detected',
+    location: 'East Wing',
+    response: 'Cleaning intensity increased automatically.',
+    outcome: 'auto',
+    why: 'Heavy dirt was detected in this area.',
+  },
+  {
+    id: 'AD2',
+    robotId: 'CB01',
+    time: '10:39 AM',
+    notice: 'Obstacle detected',
+    location: 'Corridor A',
+    response: 'Route adjusted automatically.',
+    outcome: 'auto',
+    why: 'A temporary obstacle blocked the planned route.',
+  },
+  {
+    id: 'AD3',
+    robotId: 'CB01',
+    time: '10:31 AM',
+    notice: 'High dirt concentration',
+    location: 'Lobby Entrance',
+    response: 'Extra cleaning pass added.',
+    outcome: 'auto',
+    why: 'A high-dirt area was identified near the entrance.',
+  },
+  {
+    id: 'AD4',
+    robotId: 'CB01',
+    time: '10:18 AM',
+    notice: 'Water level decreased to 62%',
+    location: 'Level 1',
+    response: 'CleanBot can complete the current job without refilling.',
+    outcome: 'monitoring',
+    why: 'Water is decreasing normally during cleaning.',
+  },
+]
+
+export const mapDetections: MapDetection[] = [
+  { id: 'MD1', floor: 'Level 1', type: 'dirt', x: 470, y: 90, location: 'East Wing', time: 'Just now', response: 'Cleaning intensity increased automatically.', outcome: 'auto' },
+  { id: 'MD2', floor: 'Level 1', type: 'spill', x: 150, y: 200, location: 'Lobby', time: '8 min ago', response: 'CleanBot paused, cleaned the spill, then continued.', outcome: 'auto' },
+  { id: 'MD3', floor: 'Level 1', type: 'obstacle', x: 320, y: 185, location: 'Corridor', time: '14 min ago', response: 'Route adjusted automatically to go around it.', outcome: 'auto' },
+  { id: 'MD4', floor: 'Level 1', type: 'solid-waste', x: 145, y: 95, location: 'Lobby', time: '21 min ago', response: 'Cleaned up and continued cleaning.', outcome: 'auto' },
+  { id: 'MD5', floor: 'Level 2', type: 'dirt', x: 600, y: 300, location: 'Executive Wing', time: '12 min ago', response: 'Extra cleaning pass added.', outcome: 'auto' },
+  { id: 'MD6', floor: 'Level 2', type: 'spill', x: 300, y: 320, location: 'Conference Hall', time: '33 min ago', response: 'Cleaned and marked area safe.', outcome: 'auto' },
+]
+
+export const frequentDirtyAreas: FrequentDirtyArea[] = [
+  { rank: 1, name: 'Main Entrance', detail: 'High activity', events: '12 dirt events this week' },
+  { rank: 2, name: 'Cafeteria', detail: 'Busy area', events: '9 dirt/spill events' },
+  { rank: 3, name: 'Level 1 Lobby', detail: 'Frequent foot traffic', events: '7 dirt events' },
+]
+
+export const reportDetections = {
+  dirtHotspots: 8,
+  spills: 2,
+  obstacles: 1,
+  extraPasses: 2,
+  adjustments: 5,
+  intervention: 'None',
+}

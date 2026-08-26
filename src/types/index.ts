@@ -5,7 +5,8 @@ export type IntensityOption = 'Low' | 'Standard' | 'High'
 export interface Robot {
   id: string
   name: string
-  status: RobotStatus
+  model: string
+  status: string
   location: string
   level: number
   battery: number
@@ -50,6 +51,71 @@ export interface CleaningTask {
 }
 
 export type AlertSeverity = 'warning' | 'maintenance' | 'success' | 'critical' | 'info'
+
+/* ===== Autonomous awareness (robot makes decisions itself) ===== */
+
+export type DetectionType = 'dirt' | 'stain' | 'spill' | 'solid-waste' | 'obstacle'
+
+export type OutcomeState = 'auto' | 'monitoring' | 'attention'
+
+export interface CleaningDetection {
+  id: string
+  robotId: string
+  type: DetectionType
+  title: string
+  location: string
+  timestamp: string
+  response: string
+  outcome: OutcomeState
+}
+
+export interface AutonomousDecision {
+  id: string
+  robotId: string
+  time: string
+  notice: string
+  location: string
+  response: string
+  outcome: OutcomeState
+  why?: string
+}
+
+export interface RobotSituation {
+  robotId: string
+  path: string
+  floorCondition: string
+  nearbyObstacle: string
+  restrictedArea: string
+  response: string
+}
+
+export interface AroundCleanBot {
+  robotId: string
+  ahead: string
+  left: string
+  right: string
+  nearby: string
+  floor: string
+}
+
+export interface MapDetection {
+  id: string
+  floor: 'Level 1' | 'Level 2'
+  type: DetectionType
+  x: number
+  y: number
+  location?: string
+  time?: string
+  response?: string
+  outcome?: OutcomeState
+}
+
+export interface FrequentDirtyArea {
+  rank: number
+  name: string
+  detail: string
+  events: string
+}
 
 export interface AlertItem {
   id: string

@@ -38,6 +38,12 @@ export function MapLegend() {
       />
       <LegendItem
         marker={
+          <span className="h-3.5 w-3.5 rounded-[3px] border border-[#E7A33E] bg-[#F59E0B]" />
+        }
+        text="Detected by CleanBot"
+      />
+      <LegendItem
+        marker={
           <span
             className="h-3.5 w-3.5 rounded-[3px] border border-[#E5484D]"
             style={{

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Bot,
@@ -9,7 +9,6 @@ import {
   ChevronRight,
   Droplets,
   MapPin,
-  Rocket,
   Sparkles,
   Timer,
   WandSparkles,
@@ -19,6 +18,7 @@ import { Modal } from '../ui/Modal'
 import { Button } from '../ui/Button'
 import { StatusBadge } from '../ui/StatusBadge'
 import { RobotVisual } from '../robots/RobotVisual'
+import { AutomaticCleaningBadge } from '../situation/AutomaticCleaningBadge'
 import { LevelOneFloorPlan } from '../map/LevelOneFloorPlan'
 import { LevelTwoFloorPlan } from '../map/LevelTwoFloorPlan'
 import { CleaningModeCard, type ModeOption } from './CleaningModeCard'
@@ -27,26 +27,26 @@ import { useApp } from '../../context/AppContext'
 import { level2Zones, zonesLevel1 } from '../../data/mockData'
 import type { CleaningMode, FacilityZone, IntensityOption } from '../../types'
 
-const steps = ['Area', 'Robot', 'Mode', 'When', 'Review']
+const steps = ['Area', 'When', 'Review']
 
 const modeOptions: ModeOption[] = [
   {
     id: 'standard',
     title: 'Standard',
-    description: 'Best for regular daily cleaning.',
+    description: 'Best for everyday cleaning. CleanBot adjusts intensity when needed.',
     icon: <Sparkles size={19} />,
   },
   {
     id: 'deep',
     title: 'Deep Clean',
-    description: 'For busy or dirtier areas that need more attention.',
+    description: 'For areas that need extra attention. CleanBot adjusts speed, water, and brush.',
     icon: <WandSparkles size={19} />,
   },
   {
     id: 'spot',
     title: 'Spot Clean',
-    description: 'For spills or a small dirty area.',
-    icon: <Rocket size={19} />,
+    description: 'Clean a specific spill, stain, or dirty area.',
+    icon: <Sparkles size={19} />,
   },
 ]
 
@@ -61,8 +61,6 @@ const defaultIntensity: Record<CleaningMode, { water: IntensityOption; suction: 
   deep: { water: 'High', suction: 'High' },
   spot: { water: 'Standard', suction: 'High' },
 }
-
-const intensities: IntensityOption[] = ['Low', 'Standard', 'High']
 
 function defaultDate(): string {
   const d = new Date(Date.now() + 24 * 60 * 60 * 1000)
@@ -164,8 +162,11 @@ export function CleaningTaskModal() {
   const [date, setDate] = useState(defaultDate)
   const [time, setTime] = useState('15:00')
   const [recurring, setRecurring] = useState('Weekdays')
+  const [showChangeRobot, setShowChangeRobot] = useState(false)
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [submitted, setSubmitted] = useState(false)
+
+  const intensities: IntensityOption[] = ['Low', 'Standard', 'High']
 
   const mapZones = floor === 'Level 1' ? zonesLevel1 : level2Zones
   const currentRobot = robots.find((r) => r.id === robotId) ?? null
@@ -204,7 +205,7 @@ export function CleaningTaskModal() {
       setNoGo([])
       setScheduleType('now')
       setMode('standard')
-      setShowAdvanced(false)
+      setShowChangeRobot(false)
     }, 200)
   }
 
@@ -235,7 +236,6 @@ export function CleaningTaskModal() {
 
   const handleSubmit = () => {
     if (!currentRobot) return
-    const taskId = `T-${Date.now() % 100000}`
     const scheduleLabel =
       scheduleType === 'now'
         ? 'Today'
@@ -244,7 +244,7 @@ export function CleaningTaskModal() {
           : `Recurring · ${recurring}`
 
     addTask({
-      id: taskId,
+      id: `T-${Date.now() % 100000}`,
       robotId: currentRobot.id,
       robotName: currentRobot.name,
       zone: areaLabel,
@@ -290,16 +290,15 @@ export function CleaningTaskModal() {
 
   const canContinue =
     (step === 0 && (entireFloor || selectedAreas.length > 0)) ||
-    (step === 1 && robotId !== null) ||
-    step === 2 ||
-    step === 3
+    step === 1 ||
+    step === 2
 
   return (
     <Modal
       open={open}
       onClose={handleClose}
       title="New Cleaning Task"
-      subtitle="Choose where to clean — we'll recommend the best robot"
+      subtitle="Choose where to clean — CleanBot handles the rest"
       maxWidth="max-w-3xl"
     >
       {submitted ? (
@@ -336,7 +335,6 @@ export function CleaningTaskModal() {
         </div>
       ) : (
         <>
-          {/* Step indicator */}
           <div className="border-b border-line px-6 py-4">
             <div className="flex items-center">
               {steps.map((label, i) => (
@@ -373,8 +371,7 @@ export function CleaningTaskModal() {
             </div>
           </div>
 
-          {/* Step content */}
-          <div className="max-h-[54vh] overflow-y-auto px-6 py-5 scrollbar-thin">
+          <div className="max-h-[56vh] overflow-y-auto px-6 py-5 scrollbar-thin">
             {step === 0 && (
               <div>
                 <p className="mb-3 text-[13px] font-semibold text-ink-secondary">
@@ -486,154 +483,125 @@ export function CleaningTaskModal() {
                     </div>
                   </div>
                 </div>
-              </div>
-            )}
 
-            {step === 1 && (
-              <div>
-                <p className="mb-3 text-[13px] font-semibold text-ink-secondary">
-                  Which robot should clean this area?
-                </p>
                 {recommendedRobot && (
-                  <button
-                    key={recommendedRobot.id}
-                    onClick={() => setRobotId(recommendedRobot.id)}
-                    className={`relative mb-3 flex w-full items-center gap-4 rounded-xl border p-4 text-left transition-all duration-150 ${
-                      robotId === recommendedRobot.id
-                        ? 'border-brand bg-brand-pale/60 ring-1 ring-brand'
-                        : 'border-line bg-white hover:border-[#CBD5E1]'
-                    }`}
-                  >
-                    <span className="absolute right-3 top-3 rounded-full bg-success-pale px-2 py-0.5 text-[10px] font-bold text-[#18794E]">
-                      Recommended
-                    </span>
-                    <RobotVisual size={60} />
-                    <div className="min-w-0 flex-1">
-                      <p className="text-[14.5px] font-bold text-ink">{recommendedRobot.name}</p>
-                      <p className="text-[11px] text-ink-muted">{recommendedRobot.id}</p>
-                      <div className="mt-1.5 flex items-center gap-3 text-[12px] font-semibold text-ink-secondary">
-                        <span className="flex items-center gap-1">
-                          <BatteryMediumMini /> {recommendedRobot.battery}% battery
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <Droplets size={12} className="text-water" /> {recommendedRobot.water}% water
-                        </span>
+                  <div className="mt-5">
+                    <p className="mb-2 text-[12px] font-semibold uppercase tracking-wide text-ink-muted">
+                      Recommended robot
+                    </p>
+                    <button
+                      key={recommendedRobot.id}
+                      onClick={() => setRobotId(recommendedRobot.id)}
+                      className={`flex w-full items-center gap-4 rounded-xl border p-4 text-left transition-all duration-150 ${
+                        robotId === recommendedRobot.id
+                          ? 'border-brand bg-brand-pale/60 ring-1 ring-brand'
+                          : 'border-line bg-white hover:border-[#CBD5E1]'
+                      }`}
+                    >
+                      <RobotVisual size={56} />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <p className="text-[14.5px] font-bold text-ink">{recommendedRobot.name}</p>
+                          <span className="rounded-full bg-success-pale px-2 py-0.5 text-[10px] font-bold text-[#18794E]">
+                            Recommended
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-ink-muted">{recommendedRobot.id}</p>
+                        <div className="mt-1.5 flex items-center gap-3 text-[12px] font-semibold text-ink-secondary">
+                          <span className="flex items-center gap-1">
+                            <BatteryMediumMini /> {recommendedRobot.battery}% battery
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <Droplets size={12} className="text-water" /> {recommendedRobot.water}% water
+                          </span>
+                        </div>
                       </div>
-                      <p className="mt-1 text-[11.5px] text-[#18794E]">
-                        Recommended because this robot is ready and available.
-                      </p>
-                    </div>
-                    <StatusBadge status={recommendedRobot.status} />
-                  </button>
+                      <StatusBadge status={recommendedRobot.status} />
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setShowChangeRobot((v) => !v)}
+                      className="mt-2 inline-flex items-center gap-1 text-[12.5px] font-semibold text-brand transition-colors hover:text-brand-dark"
+                    >
+                      Change Robot
+                      <ChevronDown size={14} className={`transition-transform ${showChangeRobot ? 'rotate-180' : ''}`} />
+                    </button>
+
+                    {showChangeRobot && (
+                      <div className="mt-3 grid grid-cols-3 gap-3 animate-fade-in">
+                        {robots
+                          .filter((r) => r.id !== recommendedId)
+                          .map((robot) => {
+                            const selected = robotId === robot.id
+                            return (
+                              <button
+                                key={robot.id}
+                                onClick={() => setRobotId(robot.id)}
+                                className={`flex flex-col items-center gap-1 rounded-xl border p-4 text-center transition-all duration-150 ${
+                                  selected
+                                    ? 'border-brand bg-brand-pale/60 ring-1 ring-brand'
+                                    : 'border-line bg-white hover:border-[#CBD5E1]'
+                                }`}
+                              >
+                                <RobotVisual size={56} />
+                                <span className="text-[13.5px] font-bold text-ink">{robot.name}</span>
+                                <StatusBadge status={robot.status} />
+                              </button>
+                            )
+                          })}
+                      </div>
+                    )}
+                  </div>
                 )}
 
-                <p className="mb-2 mt-1 text-[12px] font-semibold uppercase tracking-wide text-ink-muted">
-                  Other robots
-                </p>
-                <div className="grid grid-cols-3 gap-3">
-                  {robots
-                    .filter((r) => r.id !== recommendedId)
-                    .map((robot) => {
-                      const selected = robotId === robot.id
-                      return (
-                        <button
-                          key={robot.id}
-                          onClick={() => setRobotId(robot.id)}
-                          className={`flex flex-col items-center gap-1 rounded-xl border p-4 text-center transition-all duration-150 ${
-                            selected
-                              ? 'border-brand bg-brand-pale/60 ring-1 ring-brand'
-                              : 'border-line bg-white hover:border-[#CBD5E1]'
-                          }`}
-                        >
-                          <RobotVisual size={56} />
-                          <span className="text-[13.5px] font-bold text-ink">{robot.name}</span>
-                          <StatusBadge status={robot.status} />
-                          <span className="text-[11px] text-ink-muted">
-                            {robot.status === 'cleaning'
-                              ? 'Cleaning now'
-                              : robot.status === 'paused'
-                                ? 'Paused'
-                                : robot.status === 'ready'
-                                  ? 'Ready to go'
-                                  : robot.status === 'charging'
-                                    ? 'Charging'
-                                    : 'Needs attention'}
-                          </span>
-                        </button>
-                      )
-                    })}
-                </div>
-              </div>
-            )}
-
-            {step === 2 && (
-              <div>
-                <p className="mb-3 text-[13px] font-semibold text-ink-secondary">
-                  How should this area be cleaned?
+                <p className="mb-2 mt-5 text-[12px] font-semibold uppercase tracking-wide text-ink-muted">
+                  Recommended cleaning
                 </p>
                 <div className="grid grid-cols-3 gap-3">
                   {modeOptions.map((m) => (
                     <CleaningModeCard key={m.id} mode={m} selected={mode === m.id} onSelect={setMode} />
                   ))}
                 </div>
-
-                <div className="mt-5 rounded-xl bg-brand-pale/60 px-4 py-3 text-[12.5px] text-ink-secondary">
-                  <span className="font-semibold text-brand-dark">Recommended settings</span>
-                  {' · '}Water {defaultIntensity[mode].water}, Suction {defaultIntensity[mode].suction}.
+                <div className="mt-3">
+                  <AutomaticCleaningBadge />
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => setShowAdvanced((v) => !v)}
-                  className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg border border-line bg-white py-2.5 text-[13px] font-semibold text-ink-secondary transition-colors hover:bg-app"
-                >
-                  {showAdvanced ? 'Hide cleaning settings' : 'Adjust cleaning settings'}
-                  <ChevronDown
-                    size={15}
-                    className={`transition-transform ${showAdvanced ? 'rotate-180' : ''}`}
-                  />
-                </button>
-
-                {showAdvanced && (
-                  <div className="mt-3 grid grid-cols-2 gap-4 animate-fade-in">
-                    <div>
-                      <p className="mb-2 text-[13px] font-semibold text-ink-secondary">Water Usage</p>
-                      <div className="inline-flex w-full rounded-lg border border-line bg-app p-1">
-                        {intensities.map((opt) => (
-                          <button
-                            key={opt}
-                            onClick={() => setWater(opt)}
-                            className={`flex-1 rounded-md px-2 py-1.5 text-[12.5px] font-semibold transition-colors ${
-                              water === opt ? 'bg-brand text-white shadow-sm' : 'text-ink-secondary hover:text-ink'
-                            }`}
-                          >
-                            {opt}
-                          </button>
-                        ))}
-                      </div>
+                <div className="mt-4 border-t border-line pt-4">
+                  <button
+                    type="button"
+                    onClick={() => setShowAdvanced((v) => !v)}
+                    className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-line bg-white py-2.5 text-[13px] font-semibold text-ink-secondary transition-colors hover:bg-app"
+                  >
+                    {showAdvanced ? 'Hide advanced settings' : 'Advanced settings'}
+                    <ChevronDown size={15} className={`transition-transform ${showAdvanced ? 'rotate-180' : ''}`} />
+                  </button>
+                  {showAdvanced && (
+                    <div className="mt-3 space-y-4 animate-fade-in">
+                      <p className="text-[12px] leading-snug text-ink-muted">
+                        Optional manual override. CleanBot normally adjusts these on its own.
+                      </p>
+                      <SettingRow label="Water Usage">
+                        <Segmented
+                          options={intensities}
+                          value={water}
+                          onChange={(v) => setWater(v as IntensityOption)}
+                        />
+                      </SettingRow>
+                      <SettingRow label="Suction">
+                        <Segmented
+                          options={intensities}
+                          value={suction}
+                          onChange={(v) => setSuction(v as IntensityOption)}
+                        />
+                      </SettingRow>
                     </div>
-                    <div>
-                      <p className="mb-2 text-[13px] font-semibold text-ink-secondary">Suction</p>
-                      <div className="inline-flex w-full rounded-lg border border-line bg-app p-1">
-                        {intensities.map((opt) => (
-                          <button
-                            key={opt}
-                            onClick={() => setSuction(opt)}
-                            className={`flex-1 rounded-md px-2 py-1.5 text-[12.5px] font-semibold transition-colors ${
-                              suction === opt ? 'bg-brand text-white shadow-sm' : 'text-ink-secondary hover:text-ink'
-                            }`}
-                          >
-                            {opt}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
             )}
 
-            {step === 3 && (
+            {step === 1 && (
               <ScheduleSelector
                 value={scheduleType}
                 onChange={setScheduleType}
@@ -646,22 +614,21 @@ export function CleaningTaskModal() {
               />
             )}
 
-            {step === 4 && currentRobot && (
+            {step === 2 && currentRobot && (
               <div>
                 <p className="mb-3 text-[13px] font-semibold text-ink-secondary">
                   Review your cleaning task
                 </p>
                 <div className="overflow-hidden rounded-xl border border-line">
                   <SummaryRow label="Area" value={`${floor} · ${areaLabel}`} />
-                  <SummaryRow label="Robot" value={`${currentRobot.name} (${currentRobot.id})`} />
-                  <SummaryRow label="Mode" value={modeOptions.find((m) => m.id === mode)?.title ?? mode} />
-                  <SummaryRow label="Water" value={water} />
-                  <SummaryRow label="Suction" value={suction} />
                   <SummaryRow
-                    label="Restricted Areas"
-                    value={noGo.length ? `${noGo.length} added` : 'None'}
-                    valueClass={noGo.length ? 'text-danger' : undefined}
+                    label="Robot"
+                    value={`${currentRobot.name}`}
+                    valueNote="Recommended automatically"
                   />
+                  <SummaryRow label="Cleaning" value={modeOptions.find((m) => m.id === mode)?.title ?? mode} />
+                  <SummaryRow label="Automatic adjustments" value="Active" valueClass="text-[#18794E]" />
+                  <SummaryRow label="Restricted Areas" value={noGo.length ? `${noGo.length} added` : 'None'} valueClass={noGo.length ? 'text-danger' : undefined} />
                   <SummaryRow label="Start" value={startDisplay} last />
                 </div>
                 <div className="mt-4 flex items-center gap-3 rounded-xl bg-brand-pale/60 px-4 py-3">
@@ -670,14 +637,13 @@ export function CleaningTaskModal() {
                     <span className="font-semibold text-brand-dark">
                       Estimated time: {durationByMode[mode]}
                     </span>
-                    . The robot will skip any restricted areas you selected.
+                    . CleanBot will adjust cleaning based on what it finds.
                   </p>
                 </div>
               </div>
             )}
           </div>
 
-          {/* Footer */}
           <div className="flex items-center justify-between gap-3 border-t border-line px-6 py-4">
             <div className="flex gap-2">
               {step > 0 && (
@@ -689,7 +655,7 @@ export function CleaningTaskModal() {
                 Cancel
               </Button>
             </div>
-            {step < 4 ? (
+            {step < 2 ? (
               <Button
                 icon={<ChevronRight size={16} className="text-white" />}
                 disabled={!canContinue}
@@ -730,16 +696,59 @@ function SummaryRow({
   value,
   last = false,
   valueClass,
+  valueNote,
 }: {
   label: string
   value: string
   last?: boolean
   valueClass?: string
+  valueNote?: string
 }) {
   return (
     <div className={`flex items-center justify-between gap-4 px-4 py-3 ${last ? '' : 'border-b border-line'}`}>
       <span className="text-[13px] text-ink-secondary">{label}</span>
-      <span className={`text-[13px] font-semibold ${valueClass ?? 'text-ink'}`}>{value}</span>
+      <span className="text-right">
+        <span className={`text-[13px] font-semibold ${valueClass ?? 'text-ink'}`}>{value}</span>
+        {valueNote && (
+          <span className="ml-2 text-[11.5px] font-medium text-ink-muted">{valueNote}</span>
+        )}
+      </span>
+    </div>
+  )
+}
+
+function SettingRow({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+      <span className="text-[13px] font-semibold text-ink">{label}</span>
+      <div className="sm:w-[60%]">{children}</div>
+    </div>
+  )
+}
+
+function Segmented({
+  options,
+  value,
+  onChange,
+}: {
+  options: string[]
+  value: string
+  onChange: (v: string) => void
+}) {
+  return (
+    <div className="inline-flex w-full rounded-lg border border-line bg-app p-1">
+      {options.map((opt) => (
+        <button
+          key={opt}
+          type="button"
+          onClick={() => onChange(opt)}
+          className={`flex-1 rounded-md px-2 py-1.5 text-[12.5px] font-semibold transition-colors ${
+            value === opt ? 'bg-brand text-white shadow-sm' : 'text-ink-secondary hover:text-ink'
+          }`}
+        >
+          {opt}
+        </button>
+      ))}
     </div>
   )
 }

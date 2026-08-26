@@ -1,10 +1,14 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ChevronDown, MapPin, X } from 'lucide-react'
+import { ChevronDown, Layers, MapPin, X } from 'lucide-react'
 import { LevelOneFloorPlan } from './LevelOneFloorPlan'
 import { LevelTwoFloorPlan } from './LevelTwoFloorPlan'
 import { MapControls } from './MapControls'
 import { MapLegend } from './MapLegend'
+import { mapDetections } from '../../data/mockData'
+import { detectionMeta } from '../situation/awareness'
+import { OutcomeTag } from '../situation/OutcomeTag'
+import type { MapDetection } from '../../types'
 
 type Floor = 'Level 1' | 'Level 2'
 
@@ -54,8 +58,13 @@ export function FacilityMap({ title = 'Live Facility Map' }: { title?: string })
   const [floor, setFloor] = useState<Floor>('Level 1')
   const [zoom, setZoom] = useState(1)
   const [room, setRoom] = useState<RoomInfo | null>(null)
+  const [detection, setDetection] = useState<MapDetection | null>(null)
+  const [showDetections, setShowDetections] = useState(true)
 
   const rooms = floor === 'Level 1' ? level1Rooms : level2Rooms
+  const detections = showDetections
+    ? mapDetections.filter((d) => d.floor === floor)
+    : []
 
   return (
     <section className="rounded-2xl border border-[#E3EAF3] bg-white p-5 shadow-[0_1px_3px_rgba(16,24,40,0.04)]">
@@ -71,6 +80,7 @@ export function FacilityMap({ title = 'Live Facility Map' }: { title?: string })
             onChange={(e) => {
               setFloor(e.target.value as Floor)
               setRoom(null)
+              setDetection(null)
             }}
             aria-label="Select floor"
             className="h-9 appearance-none rounded-lg border border-[#DCE4EF] bg-white pl-8 pr-8 text-sm font-medium text-[#344054] transition hover:bg-[#F8FAFC] focus:border-brand focus:outline-none"
@@ -86,6 +96,22 @@ export function FacilityMap({ title = 'Live Facility Map' }: { title?: string })
             className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[#98A2B3]"
           />
         </div>
+        <button
+          type="button"
+          onClick={() => {
+            setShowDetections((v) => !v)
+            setDetection(null)
+          }}
+          aria-pressed={showDetections}
+          className={`flex h-9 items-center gap-1.5 rounded-lg border px-3 text-[13px] font-semibold transition-colors ${
+            showDetections
+              ? 'border-brand/30 bg-brand-pale text-brand-dark'
+              : 'border-[#DCE4EF] bg-white text-[#667085] hover:bg-[#F8FAFC]'
+          }`}
+        >
+          <Layers size={14} />
+          Detections
+        </button>
       </div>
 
       <div className="relative overflow-hidden rounded-xl bg-white">
@@ -95,37 +121,74 @@ export function FacilityMap({ title = 'Live Facility Map' }: { title?: string })
           onReset={() => setZoom(1)}
         />
         <div
-          className="origin-center transition-transform duration-200"
+          className="relative origin-center transition-transform duration-200"
           style={{ transform: `scale(${zoom})` }}
         >
           {floor === 'Level 1' ? <LevelOneFloorPlan /> : <LevelTwoFloorPlan />}
-        </div>
 
-        {/* Clickable room hotspots */}
-        <svg
-          viewBox="0 0 820 500"
-          className="absolute inset-0 h-full w-full"
-          style={{ pointerEvents: 'none' }}
-        >
-          {rooms.map((r) => (
-            <rect
-              key={r.id}
-              x={roomBox(r.id, floor).x}
-              y={roomBox(r.id, floor).y}
-              width={roomBox(r.id, floor).w}
-              height={roomBox(r.id, floor).h}
-              rx={8}
-              style={{ pointerEvents: 'auto', cursor: 'pointer' }}
-              fill={room?.id === r.id ? 'rgba(23,105,224,0.12)' : 'transparent'}
-              stroke={room?.id === r.id ? '#1769E0' : 'transparent'}
-              strokeWidth={room?.id === r.id ? 2.5 : 0}
-              className="transition-colors hover:fill-[rgba(23,105,224,0.08)] hover:stroke-[#9FC7FF] hover:stroke-[1.5]"
-              onClick={() => setRoom(r)}
-            >
-              <title>{`${r.name} · ${roomStatusStyle[r.status].label}`}</title>
-            </rect>
-          ))}
-        </svg>
+          {/* Overlay stays in the same transformed coordinate space as the floor plan */}
+          <svg
+            viewBox="0 0 820 500"
+            className="absolute inset-0 h-full w-full"
+            style={{ pointerEvents: 'none' }}
+          >
+            {/* Clickable room hotspots */}
+            {rooms.map((r) => (
+              <rect
+                key={r.id}
+                x={roomBox(r.id, floor).x}
+                y={roomBox(r.id, floor).y}
+                width={roomBox(r.id, floor).w}
+                height={roomBox(r.id, floor).h}
+                rx={8}
+                style={{ pointerEvents: 'auto', cursor: 'pointer' }}
+                fill={room?.id === r.id ? 'rgba(23,105,224,0.12)' : 'transparent'}
+                stroke={room?.id === r.id ? '#1769E0' : 'transparent'}
+                strokeWidth={room?.id === r.id ? 2.5 : 0}
+                className="transition-colors hover:fill-[rgba(23,105,224,0.08)] hover:stroke-[#9FC7FF] hover:stroke-[1.5]"
+                onClick={() => {
+                  setDetection(null)
+                  setRoom(r)
+                }}
+              >
+                <title>{`${r.name} · ${roomStatusStyle[r.status].label}`}</title>
+              </rect>
+            ))}
+
+            {/* Detection markers — rendered as SVG so they scale/position with the map */}
+              {showDetections &&
+              detections.map((d) => (
+                <g
+                  key={d.id}
+                  style={{ cursor: 'pointer' }}
+                  onClick={() => {
+                    setRoom(null)
+                    setDetection(d)
+                  }}
+                >
+                  <circle
+                    cx={d.x}
+                    cy={d.y}
+                    r={9}
+                    fill={detectionMeta[d.type].marker}
+                    stroke="#ffffff"
+                    strokeWidth={2.5}
+                    style={{ pointerEvents: 'none' }}
+                  />
+                  <circle cx={d.x} cy={d.y} r={3} fill="#ffffff" style={{ pointerEvents: 'none' }} />
+                  <title>{detectionMeta[d.type].tooltip}</title>
+                  <circle
+                    cx={d.x}
+                    cy={d.y}
+                    r={16}
+                    fill="transparent"
+                    style={{ pointerEvents: 'auto' }}
+                    data-testid="detection-marker"
+                  />
+                </g>
+              ))}
+          </svg>
+        </div>
 
         {/* Room detail popover */}
         {room && (
@@ -164,6 +227,43 @@ export function FacilityMap({ title = 'Live Facility Map' }: { title?: string })
                 {room.cta === 'cleaning' ? 'View Cleaning' : 'Schedule Cleaning'}
               </button>
             )}
+          </div>
+        )}
+
+        {/* Detection detail popover */}
+        {detection && (
+          <div className="absolute bottom-3 left-3 right-3 z-30 rounded-xl border border-[#E3EAF3] bg-white/95 p-3.5 shadow-card-hover backdrop-blur animate-fade-in">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className={`flex h-5 w-5 items-center justify-center rounded-full ${detectionMeta[detection.type].marker}`}>
+                    {(() => {
+                      const Icon = detectionMeta[detection.type].icon
+                      return <Icon size={11} className="text-white" />
+                    })()}
+                  </span>
+                  <span className="text-[15px] font-bold text-ink">{detectionMeta[detection.type].label}</span>
+                </div>
+                <p className="mt-1 text-[12.5px] leading-snug text-ink-secondary">
+                  {detection.location} · {detection.time}
+                </p>
+                <p className="mt-1.5 text-[12.5px] leading-snug text-ink-secondary">
+                  <span className="font-semibold text-ink">CleanBot response: </span>
+                  {detection.response}
+                </p>
+                <div className="mt-2">
+                  <OutcomeTag outcome={detection.outcome ?? 'auto'} />
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDetection(null)}
+                aria-label="Close"
+                className="shrink-0 rounded-md p-1 text-ink-muted hover:bg-app"
+              >
+                <X size={15} />
+              </button>
+            </div>
           </div>
         )}
       </div>
