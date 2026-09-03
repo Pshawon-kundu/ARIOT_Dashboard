@@ -3,4 +3,10 @@ uvicorn
 supabase
 python-dotenv
 pydantic
+email-validator
 PyJWT
+cryptography
+httpx
+Pillow
+python-multipart
+pytest

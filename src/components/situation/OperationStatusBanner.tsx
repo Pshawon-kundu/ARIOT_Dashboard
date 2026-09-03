@@ -1,13 +1,12 @@
 import { CheckCircle2, TriangleAlert } from 'lucide-react'
-import type { AlertItem } from '../../types'
 
 export function OperationStatusBanner({
   needsAttention,
-  topAlert,
+  activeCleaning = 0,
   onReview,
 }: {
   needsAttention: number
-  topAlert?: AlertItem
+  activeCleaning?: number
   onReview?: () => void
 }) {
   const hasAttention = needsAttention > 0
@@ -39,9 +38,9 @@ export function OperationStatusBanner({
             : 'Operations normal'}
         </p>
         <p className="text-[12.5px] text-ink-secondary">
-          {hasAttention && topAlert
-            ? `${topAlert.robotId} ${topAlert.message}`
-            : '2 robots are cleaning and no urgent problems were detected.'}
+          {activeCleaning > 0
+            ? `${activeCleaning} robot${activeCleaning > 1 ? 's are' : ' is'} actively cleaning.`
+            : 'No active cleaning in progress.'}
         </p>
       </div>
       {hasAttention && onReview && (

@@ -73,11 +73,13 @@ export function CurrentSituationCard({
 
       {around && <AroundDiagram around={around} />}
 
-      <div className="mt-3 rounded-xl bg-brand-pale/60 px-4 py-2.5">
-        <p className="text-[12.5px] font-medium text-brand-dark">
-          {situation.response}
-        </p>
-      </div>
+      {situation.response && (
+        <div className="mt-3 rounded-xl bg-brand-pale/60 px-4 py-2.5">
+          <p className="text-[12.5px] font-medium text-brand-dark">
+            {situation.response}
+          </p>
+        </div>
+      )}
     </Card>
   )
 }

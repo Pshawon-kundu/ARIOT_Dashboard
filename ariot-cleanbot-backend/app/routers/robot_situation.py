@@ -1,12 +1,16 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException
-from app.supabase import supabase
-from app.auth import get_current_user
+from app.access import get_registered_robot
+from app.auth import User, get_current_user
+from app import supabase as _sb
 
 router = APIRouter(
     prefix="/robots",
     tags=["Robot Situation"],
-    dependencies=[Depends(get_current_user)],
 )
+
+logger = logging.getLogger(__name__)
 
 DECISION_MAP = {
     "obstacle": "Route adjusted automatically",
@@ -23,26 +27,14 @@ def build_decision(event_type: str):
 
 
 @router.get("/{robot_id}/situation")
-def robot_situation(robot_id: int):
+def robot_situation(robot_id: str, user: User = Depends(get_current_user)):
     try:
-        robot_resp = (
-            supabase
-            .table("robots")
-            .select("*")
-            .eq("id", robot_id)
-            .execute()
-        )
-
-        if not robot_resp.data:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Robot {robot_id} not found"
-            )
-
-        robot = robot_resp.data[0]
+        if _sb.supabase is None:
+            raise HTTPException(status_code=404, detail="No database connected")
+        robot = get_registered_robot(robot_id, "*")
 
         events_resp = (
-            supabase
+            _sb.supabase
             .table("cleaning_events")
             .select("*")
             .eq("robot_id", robot_id)
@@ -88,8 +80,6 @@ def robot_situation(robot_id: int):
 
     except HTTPException:
         raise
-    except Exception as exc:
-        raise HTTPException(
-            status_code=503,
-            detail=f"Supabase connection failed: {exc}"
-        )
+    except Exception:
+        logger.error("Robot situation query failed")
+        raise HTTPException(status_code=503, detail="Robot situation is unavailable")

@@ -5,21 +5,20 @@ export type IntensityOption = 'Low' | 'Standard' | 'High'
 export interface Robot {
   id: string
   name: string
-  model: string
-  status: string
-  location: string
-  level: number
-  battery: number
-  water: number
-  wasteBin: number
-  progress: number
-  currentTask: string
-  estimatedCompletion: string
-  connectivity: 'Online' | 'Offline'
-  lastCommunication: string
-  lastMaintenance: string
-  nextInspection: string
-  operatingHours: number
+  model?: string
+  status?: string
+  location?: string
+  battery?: number
+  water?: number
+  wasteBin?: number
+  progress?: number
+  currentTask?: string
+  estimatedCompletion?: string
+  connectivity?: 'Online' | 'Offline'
+  lastCommunication?: string
+  lastMaintenance?: string
+  nextInspection?: string
+  operatingHours?: number
   nextTaskAt?: string
   cleaningMode?: CleaningMode
   waterUsage?: IntensityOption
@@ -31,26 +30,6 @@ export interface Robot {
 export type CleaningMode = 'standard' | 'deep' | 'spot'
 
 export type TaskStatus = 'scheduled' | 'active' | 'completed'
-
-export interface CleaningTask {
-  id: string
-  robotId: string
-  robotName: string
-  zone: string
-  floor: string
-  mode: CleaningMode
-  waterUsage: IntensityOption
-  suction: IntensityOption
-  noGoZones: string[]
-  scheduleType: 'now' | 'later' | 'recurring'
-  startTime: string
-  estimatedDuration: string
-  status: TaskStatus
-  progress: number
-  areaSqft?: number
-}
-
-export type AlertSeverity = 'warning' | 'maintenance' | 'success' | 'critical' | 'info'
 
 /* ===== Autonomous awareness (robot makes decisions itself) ===== */
 
@@ -72,7 +51,7 @@ export interface CleaningDetection {
 export interface AutonomousDecision {
   id: string
   robotId: string
-  time: string
+  time?: string
   notice: string
   location: string
   response: string
@@ -86,7 +65,7 @@ export interface RobotSituation {
   floorCondition: string
   nearbyObstacle: string
   restrictedArea: string
-  response: string
+  response?: string
 }
 
 export interface AroundCleanBot {
@@ -117,51 +96,6 @@ export interface FrequentDirtyArea {
   events: string
 }
 
-export interface AlertItem {
-  id: string
-  title: string
-  robotId: string
-  severity: AlertSeverity
-  message: string
-  time: string
-  action: 'View Robot' | 'View Maintenance' | 'View Report' | 'View Location'
-  resolved?: boolean
-}
-
-export type ZoneStatus = 'cleaned' | 'in-progress' | 'uncleaned'
-
-export interface FacilityZone {
-  id: string
-  name: string
-  status: ZoneStatus
-  x: number
-  y: number
-  w: number
-  h: number
-  label?: string
-}
-
-export interface NoGoZone {
-  id: string
-  floor: 'Level 1' | 'Level 2'
-  name: string
-  x: number
-  y: number
-  w: number
-  h: number
-}
-
-export interface MaintenanceItem {
-  id: string
-  robotId: string
-  robotName: string
-  part: string
-  status: 'Inspection Recommended' | 'Due Soon' | 'Overdue' | 'Inspected'
-  operatingHours: number
-  lastInspection: string
-  suggestedAction: string
-}
-
 export interface CleaningReport {
   id: string
   title: string
@@ -181,4 +115,109 @@ export interface ToastMessage {
   title: string
   description?: string
   tone: 'success' | 'info' | 'warning' | 'error'
+}
+
+/* ===== Digital Twin Simulator live types ===== */
+
+export interface LiveTelemetry {
+  robot_id: string
+  status: string
+  sim_status: string
+  engine_state: string
+  battery: number
+  water_level: number
+  waste_level: number
+  position: { x: number; y: number; yaw: number }
+  orientation: number
+  sensors: {
+    encoder: Record<string, unknown>
+    imu: Record<string, unknown>
+    wheels: {
+      left_speed_mps: number
+      right_speed_mps: number
+      velocity_mps: number
+      angular_velocity_radps: number
+      travelled_m: number
+    }
+  }
+  cleaning_progress: number
+  meters_cleaned: number
+  current_task: string
+  current_room: string
+  cleaning_mode: string
+  path_history: Array<{ x: number; y: number; yaw: number; t: number }>
+  planned_route?: Array<{ x: number; y: number; label?: string }>
+  tick_hz: number
+  target_waypoint?: { x: number; y: number; label?: string } | null
+  lidar?: {
+    ranges: (number | null)[]
+    angles: number[]
+    range_max: number
+  }
+}
+
+export interface LidarScan {
+  robot_id: string
+  scan: (number | null)[]
+  angles: number[]
+  beam_count: number
+  range_max: number
+  range_min: number
+  pose: { x: number; y: number; yaw: number }
+  room: string
+  timestamp: string
+}
+
+export interface SimulatorCommandResult {
+  robot_id: string
+  command: string
+  status: string
+  message: string
+}
+
+/* ===== Simulator Map (from /simulation/map endpoint) ===== */
+
+export interface SimulationMapRoom {
+  name: string
+  bounds: [number, number, number, number]
+}
+
+export interface SimulationMapObstacle {
+  name: string
+  bounds: [number, number, number, number]
+  dynamic: boolean
+  restricted?: boolean
+}
+
+export interface SimulationMapDoor {
+  name: string
+  position_x: number
+  y_min: number
+  y_max: number
+}
+
+export interface SimulationMapData {
+  name: string
+  size: [number, number]
+  rooms: SimulationMapRoom[]
+  walls: number[][]
+  obstacles: SimulationMapObstacle[]
+  doors: SimulationMapDoor[]
+  dock: [number, number, number]
+}
+
+export interface SimulationMap {
+  robot_id: string
+  map: SimulationMapData
+}
+
+/* ===== Dashboard Metrics (from /dashboard/metrics endpoint) ===== */
+
+export interface DashboardMetrics {
+  total_robots: number
+  active_cleaning: number
+  attention_required: number
+  cleaning_progress_today: number
+  area_cleaned_today: number
+  facility_status: string
 }

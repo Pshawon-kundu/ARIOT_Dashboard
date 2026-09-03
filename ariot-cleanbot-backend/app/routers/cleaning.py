@@ -1,32 +1,38 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException
-from app.supabase import supabase
-from app.auth import get_current_user
+from app.access import get_registered_robot
+from app.auth import User, get_current_user
+from app import supabase as _sb
 
 router = APIRouter(
     prefix="/cleaning",
     tags=["Cleaning"],
-    dependencies=[Depends(get_current_user)],
 )
+
+logger = logging.getLogger(__name__)
 
 
 @router.get("/jobs")
-def list_cleaning_jobs():
+def list_cleaning_jobs(user: User = Depends(get_current_user)):
+    if _sb.supabase is None:
+        return []
     try:
-        jobs_resp = (
-            supabase
+        jobs_query = (
+            _sb.supabase
             .table("cleaning_jobs")
             .select("*")
             .order("started_at", desc=True)
-            .execute()
         )
+        jobs_resp = jobs_query.execute()
         jobs = jobs_resp.data or []
 
-        robots_resp = (
-            supabase
+        robots_query = (
+            _sb.supabase
             .table("robots")
             .select("id, name")
-            .execute()
         )
+        robots_resp = robots_query.execute()
         robot_map = {
             str(r.get("id")): r.get("name") for r in (robots_resp.data or [])
         }
@@ -47,23 +53,23 @@ def list_cleaning_jobs():
             for job in jobs
         ]
 
-    except Exception as exc:
-        raise HTTPException(
-            status_code=503,
-            detail=f"Supabase connection failed: {exc}"
-        )
+    except Exception:
+        logger.error("Cleaning jobs query failed")
+        raise HTTPException(status_code=503, detail="Cleaning jobs are unavailable")
 
 
 @router.get("/jobs/{job_id}")
-def get_cleaning_job(job_id: str):
+def get_cleaning_job(job_id: str, user: User = Depends(get_current_user)):
+    if _sb.supabase is None:
+        raise HTTPException(status_code=404, detail="No database connected")
     try:
-        job_resp = (
-            supabase
+        job_query = (
+            _sb.supabase
             .table("cleaning_jobs")
             .select("*")
             .eq("id", job_id)
-            .execute()
         )
+        job_resp = job_query.execute()
 
         if not job_resp.data:
             raise HTTPException(
@@ -76,15 +82,8 @@ def get_cleaning_job(job_id: str):
 
         robot_name = "Unknown"
         if robot_id is not None:
-            robot_resp = (
-                supabase
-                .table("robots")
-                .select("id, name")
-                .eq("id", robot_id)
-                .execute()
-            )
-            if robot_resp.data:
-                robot_name = robot_resp.data[0].get("name", "Unknown")
+            robot = get_registered_robot(str(robot_id), "id,name")
+            robot_name = robot.get("name", "Unknown")
 
         return {
             "id": job.get("id"),
@@ -102,8 +101,6 @@ def get_cleaning_job(job_id: str):
 
     except HTTPException:
         raise
-    except Exception as exc:
-        raise HTTPException(
-            status_code=503,
-            detail=f"Supabase connection failed: {exc}"
-        )
+    except Exception:
+        logger.error("Cleaning job detail query failed")
+        raise HTTPException(status_code=503, detail="Cleaning job is unavailable")

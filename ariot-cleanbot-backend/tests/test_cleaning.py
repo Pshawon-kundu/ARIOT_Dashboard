@@ -82,7 +82,6 @@ def client(monkeypatch):
         ],
     }
     fake = FakeSupabase(store)
-    monkeypatch.setattr(cleaning, "supabase", fake)
     monkeypatch.setattr(supabase_module, "supabase", fake)
     monkeypatch.setattr(
         auth_module,

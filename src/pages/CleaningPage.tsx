@@ -1,146 +1,399 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  CalendarDays,
   CheckCircle2,
-  Clock,
   MapPin,
-  Plus,
-  Sparkles,
+  Play,
+  RotateCcw,
+  Square,
 } from 'lucide-react'
-import { PageHeader } from '../components/layout/PageHeader'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { StatusBadge } from '../components/ui/StatusBadge'
 import { ProgressBar } from '../components/ui/ProgressBar'
 import { EmptyState } from '../components/ui/EmptyState'
 import { FacilityMap } from '../components/map/FacilityMap'
-import { RobotVisual } from '../components/robots/RobotVisual'
 import { useApp } from '../context/AppContext'
-import { reports } from '../data/mockData'
-import type { CleaningMode } from '../types'
+import {
+  getCleaningJobs,
+  getRobotLive,
+  getSimulatorRobot,
+  stopRobot,
+  resetRobot,
+  useApi,
+  usePolling,
+} from '../services/api'
 
-const modeLabel: Record<CleaningMode, string> = {
-  standard: 'Standard',
-  deep: 'Deep Clean',
-  spot: 'Spot Clean',
-}
-
-type Tab = 'active' | 'scheduled' | 'completed'
-
-const tabs: { id: Tab; label: string }[] = [
-  { id: 'active', label: 'Active' },
-  { id: 'scheduled', label: 'Scheduled' },
-  { id: 'completed', label: 'Completed' },
-]
+type Tab = 'active' | 'history'
 
 export function CleaningPage() {
-  const { robots, tasks, openTaskModal } = useApp()
+  const { robots, showToast, openStartCleaningModal } = useApp()
   const navigate = useNavigate()
   const [tab, setTab] = useState<Tab>('active')
+  const [confirmReset, setConfirmReset] = useState(false)
 
-  const activeRobots = robots.filter((r) => r.status === 'cleaning')
-  const scheduled = tasks.filter((t) => t.status === 'scheduled')
-  const completed = reports
+  const { data: simInfo } = useApi(getSimulatorRobot, [])
+  const robotId = simInfo?.available ? String(simInfo.robot_id) : undefined
+  const identityRobot = robotId ? robots.find((r) => r.id === robotId) ?? null : null
+
+  const { data: liveTelemetry } = usePolling(
+    () => getRobotLive(robotId ?? ''),
+    1000,
+    [robotId],
+  )
+
+  const { data: cleaningJobs } = useApi(getCleaningJobs, [])
+
+  const isActive = liveTelemetry?.status === 'cleaning'
+
+  const handleStart = () => {
+    openStartCleaningModal(robotId)
+  }
+
+  const handleStop = async () => {
+    if (!robotId) return
+    try {
+      await stopRobot(robotId)
+      showToast('info', 'Cleaning stopped', `${identityRobot?.name ?? 'Robot'} has been stopped.`)
+    } catch {
+      showToast('error', 'Command failed', 'Could not stop the cleaning mission.')
+    }
+  }
+
+  const handleReset = async () => {
+    if (!robotId) return
+    try {
+      await resetRobot(robotId)
+      showToast('info', 'Simulation reset', `${identityRobot?.name ?? 'Robot'} has been reset to factory state.`)
+      setConfirmReset(false)
+    } catch {
+      showToast('error', 'Reset failed', 'Could not reset the simulation.')
+    }
+  }
 
   return (
     <div>
-      <PageHeader
-        title="Cleaning"
-        subtitle="Start, schedule, and follow cleaning jobs"
-      >
-        <Button icon={<Plus size={16} />} onClick={() => openTaskModal()}>
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h1 className="text-[22px] font-bold tracking-tight text-ink">Cleaning</h1>
+          <p className="mt-0.5 text-[13px] text-ink-secondary">
+            Start, monitor, and review cleaning missions.
+          </p>
+        </div>
+        <Button icon={<Play size={15} />} onClick={handleStart}>
           Start Cleaning
         </Button>
-      </PageHeader>
+      </div>
 
-      {/* Tabs */}
       <div className="mb-5 flex gap-2">
-        {tabs.map((t) => (
-          <button
-            key={t.id}
-            onClick={() => setTab(t.id)}
-            className={`rounded-full px-4 py-1.5 text-[13px] font-semibold transition-colors ${
-              tab === t.id
-                ? 'bg-ink text-white'
-                : 'bg-white text-ink-secondary ring-1 ring-line hover:bg-idle-pale'
-            }`}
-          >
-            {t.label}
-            {t.id === 'scheduled' && scheduled.length > 0 && ` (${scheduled.length})`}
-            {t.id === 'completed' && completed.length > 0 && ` (${completed.length})`}
-          </button>
-        ))}
+        <button
+          onClick={() => setTab('active')}
+          className={`rounded-full px-4 py-1.5 text-[13px] font-semibold transition-colors ${
+            tab === 'active'
+              ? 'bg-ink text-white'
+              : 'bg-white text-ink-secondary ring-1 ring-line hover:bg-idle-pale'
+          }`}
+        >
+          Active
+        </button>
+        <button
+          onClick={() => setTab('history')}
+          className={`rounded-full px-4 py-1.5 text-[13px] font-semibold transition-colors ${
+            tab === 'history'
+              ? 'bg-ink text-white'
+              : 'bg-white text-ink-secondary ring-1 ring-line hover:bg-idle-pale'
+          }`}
+        >
+          History
+        </button>
       </div>
 
       {tab === 'active' && (
         <>
-          <h2 className="mb-3 text-[15px] font-bold text-ink">Active Cleaning</h2>
-          {activeRobots.length === 0 ? (
-            <Card className="mb-6">
-              <EmptyState
-                icon={<Sparkles size={22} />}
-                title="No cleaning in progress"
-                description="Start a cleaning task to see live progress here."
-              />
-              <div className="flex justify-center pb-6">
-                <Button onClick={() => openTaskModal()}>Start Cleaning</Button>
-              </div>
-            </Card>
-          ) : (
-            <div className="mb-6 grid grid-cols-3 gap-4">
-              {activeRobots.map((robot) => (
-                <Card key={robot.id} className="col-span-2">
-                  <div className="grid grid-cols-2 gap-6">
-                    <div>
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-idle-pale">
-                            <RobotVisual size={46} />
-                          </span>
-                          <div>
-                            <p className="text-[15px] font-bold text-ink">{robot.name}</p>
-                            <p className="text-xs text-ink-muted">{robot.id}</p>
-                          </div>
-                        </div>
-                        <StatusBadge status={robot.status} />
-                      </div>
-                      <p className="mt-3.5 flex items-center gap-1.5 text-[13px] text-ink-secondary">
-                        <MapPin size={14} className="shrink-0 text-ink-muted" />
-                        {robot.location}
-                      </p>
-                      <p className="mt-3 text-[13px] font-semibold text-ink">{robot.currentTask}</p>
+          {isActive ? (
+            <div className="space-y-4">
+              <div className="grid grid-cols-12 gap-4">
+                <div className="col-span-12 lg:col-span-8">
+                  <FacilityMap
+                    title="Live Facility Map"
+                    liveTelemetry={liveTelemetry}
+                    robotId={robotId}
+                    robotName={identityRobot?.name}
+                    detections={[]}
+                  />
+                </div>
 
-                      <div className="mt-5 space-y-3">
-                        <div>
-                          <div className="mb-1.5 flex justify-between text-[12.5px]">
-                            <span className="font-medium text-ink-secondary">Complete</span>
-                            <span className="font-bold text-ink">{robot.progress}%</span>
-                          </div>
-                          <ProgressBar value={robot.progress} />
-                        </div>
-                        <div className="flex items-center justify-between rounded-lg bg-brand-pale/60 px-3.5 py-2.5">
-                          <span className="flex items-center gap-1.5 text-[12.5px] font-medium text-ink-secondary">
-                            <Clock size={13} className="text-brand" />
-                            Remaining
-                          </span>
-                          <span className="text-[14px] font-bold text-brand-dark">
-                            {robot.estimatedCompletion}
-                          </span>
-                        </div>
+                <div className="col-span-12 lg:col-span-4 space-y-4">
+                  <Card>
+                    <h3 className="text-[13px] font-semibold text-ink-secondary uppercase tracking-wide mb-3">
+                      Current Mission
+                    </h3>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between py-1.5 border-b border-line/40">
+                        <span className="text-[12.5px] text-ink-secondary">Robot</span>
+                        <span className="text-[12.5px] font-semibold text-ink">
+                          {identityRobot?.name ?? 'Robot'}
+                        </span>
                       </div>
+                      <div className="flex items-center justify-between py-1.5 border-b border-line/40">
+                        <span className="text-[12.5px] text-ink-secondary">Status</span>
+                        <StatusBadge status={liveTelemetry?.status ?? 'unknown'} />
+                      </div>
+                      <div className="flex items-center justify-between py-1.5 border-b border-line/40">
+                        <span className="text-[12.5px] text-ink-secondary">Room</span>
+                        <span className="text-[12.5px] font-semibold text-ink">
+                          {liveTelemetry?.current_room ?? 'N/A'}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between py-1.5 border-b border-line/40">
+                        <span className="text-[12.5px] text-ink-secondary">Task</span>
+                        <span className="text-[12.5px] font-semibold text-ink">
+                          {liveTelemetry?.current_task ?? 'N/A'}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between py-1.5 border-b border-line/40">
+                        <span className="text-[12.5px] text-ink-secondary">Mode</span>
+                        <span className="text-[12.5px] font-semibold text-ink">
+                          {liveTelemetry?.cleaning_mode ?? 'N/A'}
+                        </span>
+                      </div>
+                      {liveTelemetry?.target_waypoint?.label && (
+                        <div className="flex items-center justify-between py-1.5 border-b border-line/40">
+                          <span className="text-[12.5px] text-ink-secondary">Target</span>
+                          <span className="text-[12.5px] font-semibold text-ink">
+                            {liveTelemetry.target_waypoint.label}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </Card>
 
+                  <Card>
+                    <h3 className="text-[13px] font-semibold text-ink-secondary uppercase tracking-wide mb-3">
+                      Resources
+                    </h3>
+                    <div className="space-y-3">
+                      <div>
+                        <div className="mb-1.5 flex items-center justify-between">
+                          <span className="text-[12px] text-ink-muted">Battery</span>
+                          <span className="text-[12.5px] font-bold text-ink">
+                            {liveTelemetry?.battery !== undefined ? `${liveTelemetry.battery}%` : 'N/A'}
+                          </span>
+                        </div>
+                        {liveTelemetry?.battery !== undefined && (
+                          <ProgressBar
+                            value={liveTelemetry.battery}
+                            color={liveTelemetry.battery < 30 ? 'bg-danger' : 'bg-success'}
+                          />
+                        )}
+                      </div>
+                      <div>
+                        <div className="mb-1.5 flex items-center justify-between">
+                          <span className="text-[12px] text-ink-muted">Water</span>
+                          <span className="text-[12.5px] font-bold text-ink">
+                            {liveTelemetry?.water_level !== undefined ? `${liveTelemetry.water_level}%` : 'N/A'}
+                          </span>
+                        </div>
+                        {liveTelemetry?.water_level !== undefined && (
+                          <ProgressBar
+                            value={liveTelemetry.water_level}
+                            color={liveTelemetry.water_level < 30 ? 'bg-danger' : 'bg-water'}
+                          />
+                        )}
+                      </div>
+                      <div>
+                        <div className="mb-1.5 flex items-center justify-between">
+                          <span className="text-[12px] text-ink-muted">Waste Bin</span>
+                          <span className="text-[12.5px] font-bold text-ink">
+                            {liveTelemetry?.waste_level !== undefined ? `${liveTelemetry.waste_level}% full` : 'N/A'}
+                          </span>
+                        </div>
+                        {liveTelemetry?.waste_level !== undefined && (
+                          <ProgressBar
+                            value={liveTelemetry.waste_level}
+                            color={liveTelemetry.waste_level > 80 ? 'bg-danger' : 'bg-warning'}
+                          />
+                        )}
+                      </div>
+                      <div className="flex items-center justify-between border-t border-line/40 pt-3">
+                        <span className="text-[12px] text-ink-muted">Distance</span>
+                        <span className="text-[12.5px] font-bold text-ink">
+                          {liveTelemetry?.meters_cleaned !== undefined
+                            ? `${Math.round(liveTelemetry.meters_cleaned)}m`
+                            : 'N/A'}
+                        </span>
+                      </div>
+                    </div>
+                  </Card>
+
+                  <Card>
+                    <h3 className="text-[13px] font-semibold text-ink-secondary uppercase tracking-wide mb-3">
+                      Mission Progress
+                    </h3>
+                    <div className="mb-3">
+                      <div className="mb-1.5 flex items-center justify-between">
+                        <span className="text-[12px] text-ink-muted">Progress</span>
+                        <span className="text-[12.5px] font-bold text-ink">
+                          {liveTelemetry?.cleaning_progress !== undefined ? `${liveTelemetry.cleaning_progress}%` : 'N/A'}
+                        </span>
+                      </div>
+                      {liveTelemetry?.cleaning_progress !== undefined && (
+                        <ProgressBar value={liveTelemetry.cleaning_progress} />
+                      )}
+                    </div>
+                    <div className="flex gap-2">
                       <Button
-                        variant="secondary"
-                        className="mt-4"
-                        onClick={() => navigate(`/robots/${robot.id}`)}
+                        size="sm"
+                        variant="danger"
+                        icon={<Square size={13} />}
+                        onClick={handleStop}
+                        fullWidth
                       >
-                        View Live Cleaning
+                        Stop
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        icon={<RotateCcw size={13} />}
+                        onClick={() => setConfirmReset(true)}
+                        fullWidth
+                      >
+                        Reset
                       </Button>
                     </div>
-                    <div className="rounded-xl border border-line bg-app/50 p-2">
-                      <FacilityMap title="Live Map" />
+                  </Card>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-12 gap-4">
+              <div className="col-span-12 lg:col-span-8">
+                <Card>
+                  <div className="py-16 text-center">
+                    <p className="text-[14px] font-semibold text-ink">
+                      {identityRobot?.name ?? 'Robot'} is idle.
+                    </p>
+                    <p className="mt-1.5 text-[13px] text-ink-secondary">
+                      {liveTelemetry
+                        ? `Current state: ${liveTelemetry.engine_state ?? 'idle'}`
+                        : 'Waiting for robot telemetry…'}
+                    </p>
+                    <Button className="mt-5" icon={<Play size={15} />} onClick={handleStart}>
+                      Start Cleaning
+                    </Button>
+                  </div>
+                </Card>
+              </div>
+
+              <div className="col-span-12 lg:col-span-4">
+                <Card>
+                  <h3 className="text-[13px] font-semibold text-ink-secondary uppercase tracking-wide mb-3">
+                    Robot Status
+                  </h3>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between py-1.5 border-b border-line/40">
+                      <span className="text-[12.5px] text-ink-secondary">Name</span>
+                      <span className="text-[12.5px] font-semibold text-ink">
+                        {identityRobot?.name ?? 'N/A'}
+                      </span>
                     </div>
+                    <div className="flex items-center justify-between py-1.5 border-b border-line/40">
+                      <span className="text-[12.5px] text-ink-secondary">Status</span>
+                      <StatusBadge status={liveTelemetry?.status ?? 'unknown'} />
+                    </div>
+                    <div className="flex items-center justify-between py-1.5 border-b border-line/40">
+                      <span className="text-[12.5px] text-ink-secondary">Battery</span>
+                      <span className="text-[12.5px] font-semibold text-ink">
+                        {liveTelemetry?.battery !== undefined ? `${liveTelemetry.battery}%` : 'N/A'}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between py-1.5 border-b border-line/40">
+                      <span className="text-[12.5px] text-ink-secondary">Water</span>
+                      <span className="text-[12.5px] font-semibold text-ink">
+                        {liveTelemetry?.water_level !== undefined ? `${liveTelemetry.water_level}%` : 'N/A'}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between py-1.5">
+                      <span className="text-[12.5px] text-ink-secondary">Waste</span>
+                      <span className="text-[12.5px] font-semibold text-ink">
+                        {liveTelemetry?.waste_level !== undefined ? `${liveTelemetry.waste_level}%` : 'N/A'}
+                      </span>
+                    </div>
+                  </div>
+                </Card>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {tab === 'history' && (
+        <>
+          {(!cleaningJobs || cleaningJobs.length === 0) ? (
+            <Card>
+              <EmptyState
+                icon={<CheckCircle2 size={22} />}
+                title="No cleaning history"
+                description="Completed cleaning jobs will appear here."
+              />
+            </Card>
+          ) : (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {cleaningJobs.map((job) => (
+                <Card key={job.id} hoverable>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-3">
+                      <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-success-pale text-success">
+                        <CheckCircle2 size={18} />
+                      </span>
+                      <div>
+                        <p className="text-[14px] font-bold text-ink">
+                          {job.zone || job.floor || 'Cleaning Job'}
+                        </p>
+                        <p className="text-xs text-ink-muted">
+                          {job.completed_at
+                            ? new Date(job.completed_at).toLocaleDateString('en-US', {
+                                month: 'short',
+                                day: 'numeric',
+                                year: 'numeric',
+                              })
+                            : '—'}
+                        </p>
+                      </div>
+                    </div>
+                    <StatusBadge status={job.status === 'completed' ? 'completed' : 'in_progress'} />
+                  </div>
+
+                  <div className="mt-4 space-y-2">
+                    <div className="flex items-center gap-2 text-[12.5px] text-ink-secondary">
+                      <MapPin size={13} className="shrink-0 text-ink-muted" />
+                      {job.robot_name}
+                    </div>
+                    {job.progress !== undefined && job.progress !== null && (
+                      <div className="flex items-center gap-2 text-[12.5px] text-ink-secondary">
+                        Progress: {job.progress}%
+                      </div>
+                    )}
+                    {job.coverage !== undefined && job.coverage !== null && (
+                      <div className="flex items-center gap-2 text-[12.5px] text-ink-secondary">
+                        Coverage: {job.coverage}%
+                      </div>
+                    )}
+                    {job.started_at && (
+                      <div className="flex items-center gap-2 text-[12.5px] text-ink-secondary">
+                        Started: {new Date(job.started_at).toLocaleString()}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="mt-4 flex justify-end">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => navigate('/reports')}
+                    >
+                      View Report
+                    </Button>
                   </div>
                 </Card>
               ))}
@@ -149,124 +402,23 @@ export function CleaningPage() {
         </>
       )}
 
-      {tab === 'scheduled' && (
-        <>
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-[15px] font-bold text-ink">Scheduled Cleaning</h2>
-            <span className="text-[13px] text-ink-muted">{scheduled.length} upcoming</span>
-          </div>
-          {scheduled.length === 0 ? (
-            <Card>
-              <EmptyState
-                icon={<CalendarDays size={22} />}
-                title="No scheduled tasks"
-                description="Schedule a cleaning task and it will appear here."
-              />
-            </Card>
-          ) : (
-            <div className="grid grid-cols-3 gap-4">
-              {scheduled.map((task) => {
-                const robot = robots.find((r) => r.id === task.robotId)
-                return (
-                  <Card key={task.id} hoverable>
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex items-center gap-3">
-                        <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-pale text-brand">
-                          <Sparkles size={18} />
-                        </span>
-                        <div>
-                          <p className="text-[14px] font-bold text-ink">{task.zone}</p>
-                          <p className="text-xs text-ink-muted">{task.floor}</p>
-                        </div>
-                      </div>
-                      <span className="rounded-full bg-idle-pale px-2.5 py-1 text-[11px] font-semibold text-ink-secondary">
-                        {modeLabel[task.mode]}
-                      </span>
-                    </div>
-
-                    <div className="mt-4 space-y-2 rounded-xl border border-line bg-app/50 px-3.5 py-3">
-                      <p className="flex items-center gap-2 text-[13px] font-semibold text-ink">
-                        <RobotVisual size={26} />
-                        {task.robotName}
-                        {robot && <StatusBadge status={robot.status} dot={false} />}
-                      </p>
-                      <p className="flex items-center gap-2 text-[13px] text-ink-secondary">
-                        <CalendarDays size={14} className="text-ink-muted" />
-                        {task.startTime}
-                      </p>
-                      <p className="flex items-center gap-2 text-[13px] text-ink-secondary">
-                        <Clock size={14} className="text-ink-muted" />
-                        Est. {task.estimatedDuration}
-                      </p>
-                    </div>
-
-                    <div className="mt-4 flex justify-end">
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => openTaskModal(task.robotId)}
-                      >
-                        Edit
-                      </Button>
-                    </div>
-                  </Card>
-                )
-              })}
+      {confirmReset && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
+          <Card className="mx-4 w-full max-w-sm p-6">
+            <h3 className="text-[16px] font-bold text-ink">Reset Robot?</h3>
+            <p className="mt-2 text-[13px] text-ink-secondary">
+              This will reset {identityRobot?.name ?? 'the robot'} to factory state. Current cleaning progress will be lost.
+            </p>
+            <div className="mt-5 flex justify-end gap-2">
+              <Button variant="secondary" onClick={() => setConfirmReset(false)}>
+                Cancel
+              </Button>
+              <Button variant="danger" icon={<RotateCcw size={14} />} onClick={handleReset}>
+                Reset
+              </Button>
             </div>
-          )}
-        </>
-      )}
-
-      {tab === 'completed' && (
-        <>
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-[15px] font-bold text-ink">Completed Cleaning</h2>
-            <span className="text-[13px] text-ink-muted">{completed.length} this week</span>
-          </div>
-          <div className="grid grid-cols-3 gap-4">
-            {completed.map((report) => (
-              <Card key={report.id} hoverable>
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex items-center gap-3">
-                    <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-success-pale text-success">
-                      <CheckCircle2 size={18} />
-                    </span>
-                    <div>
-                      <p className="text-[14px] font-bold text-ink">{report.title}</p>
-                      <p className="text-xs text-ink-muted">{report.date}</p>
-                    </div>
-                  </div>
-                  <StatusBadge status="completed" />
-                </div>
-
-                <div className="mt-4 space-y-2 rounded-xl border border-line bg-app/50 px-3.5 py-3">
-                  <p className="flex items-center gap-2 text-[13px] font-semibold text-ink">
-                    <RobotVisual size={26} />
-                    {report.robotName}
-                  </p>
-                  <p className="flex items-center gap-2 text-[13px] text-ink-secondary">
-                    <Sparkles size={14} className="text-ink-muted" />
-                    {report.coverage}% coverage
-                  </p>
-                  <p className="flex items-center gap-2 text-[13px] text-ink-secondary">
-                    <MapPin size={14} className="text-ink-muted" />
-                    {report.area}
-                  </p>
-                </div>
-
-                <div className="mt-4 flex justify-end">
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => navigate('/reports')}
-                  >
-                    View Report
-                  </Button>
-                </div>
-              </Card>
-            ))}
-          </div>
-        </>
+          </Card>
+        </div>
       )}
     </div>
   )

@@ -3,12 +3,13 @@ import {
   Bell,
   Bot,
   ChartNoAxesColumnIncreasing,
-  ChevronDown,
+  ChevronRight,
   LayoutDashboard,
   Sparkles,
   User,
 } from 'lucide-react'
 import { RobotVisual } from '../robots/RobotVisual'
+import { useApp } from '../../context/AppContext'
 
 const navItems = [
   { to: '/', label: 'Overview', icon: LayoutDashboard, end: true },
@@ -19,6 +20,9 @@ const navItems = [
 ]
 
 export function AppSidebar() {
+  const { currentUser, profileLoading } = useApp()
+  const initials = currentUser ? getInitials(currentUser.name) : 'U'
+
   return (
     <aside className="fixed inset-y-0 left-0 z-40 flex w-[224px] flex-col border-r border-line bg-white">
       {/* Brand */}
@@ -73,19 +77,32 @@ export function AppSidebar() {
 
       {/* User profile */}
       <div className="border-t border-line px-4 py-4">
-        <button className="flex w-full items-center gap-3 rounded-xl px-2 py-1.5 text-left transition-colors hover:bg-idle-pale">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-idle-pale text-ink-secondary">
-            <User size={17} />
+        <NavLink to="/account" className="flex w-full items-center gap-3 rounded-xl px-2 py-1.5 text-left transition-colors hover:bg-idle-pale">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-brand-pale text-xs font-bold text-brand">
+            {currentUser?.avatar_url ? (
+              <img src={currentUser.avatar_url} alt="" className="h-full w-full object-cover" />
+            ) : currentUser ? (
+              initials
+            ) : (
+              <User size={17} />
+            )}
           </span>
           <span className="min-w-0 flex-1">
             <span className="block text-[13.5px] font-semibold leading-tight text-ink">
-              Facility Manager
+              {profileLoading ? 'Loading...' : currentUser?.name ?? 'Account'}
             </span>
-            <span className="block text-xs text-ink-muted">Admin</span>
+            <span className="block text-xs text-ink-muted">
+              {currentUser?.email ?? 'Profile unavailable'}
+            </span>
           </span>
-          <ChevronDown size={15} className="shrink-0 text-ink-muted" />
-        </button>
+          <ChevronRight size={15} className="shrink-0 text-ink-muted" />
+        </NavLink>
       </div>
     </aside>
   )
+}
+
+function getInitials(name: string): string {
+  const words = name.trim().split(/\s+/).filter(Boolean)
+  return words.slice(0, 2).map((word) => word[0]?.toUpperCase()).join('') || 'U'
 }

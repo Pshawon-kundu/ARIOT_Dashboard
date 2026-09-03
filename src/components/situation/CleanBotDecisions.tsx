@@ -30,9 +30,11 @@ function DecisionRow({ decision }: { decision: AutonomousDecision }) {
   return (
     <li className="rounded-xl border border-line bg-app/40 p-3">
       <div className="flex items-start gap-3">
-        <span className="mt-0.5 w-[58px] shrink-0 text-[11.5px] font-semibold text-ink-muted">
-          {decision.time}
-        </span>
+        {decision.time && (
+          <span className="mt-0.5 w-[58px] shrink-0 text-[11.5px] font-semibold text-ink-muted">
+            {decision.time}
+          </span>
+        )}
         <div className="min-w-0 flex-1">
           <p className="text-[13.5px] font-bold text-ink">{decision.notice}</p>
           <p className="text-[12px] text-ink-secondary">{decision.location}</p>

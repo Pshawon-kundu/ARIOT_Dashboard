@@ -2,68 +2,83 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useState,
   type ReactNode,
 } from 'react'
-import type {
-  AlertItem,
-  AlertSeverity,
-  CleaningTask,
-  MaintenanceItem,
-  Robot,
-  ToastMessage,
-} from '../types'
-import {
-  initialAlerts,
-  initialTasks,
-  maintenanceItems,
-  robots as initialRobots,
-} from '../data/mockData'
+import type { Robot, ToastMessage } from '../types'
+import { getCurrentProfile, getRobots, logoutUser, type CurrentUser } from '../services/api'
 
 interface AppContextValue {
   robots: Robot[]
-  tasks: CleaningTask[]
-  alerts: AlertItem[]
-  maintenance: MaintenanceItem[]
+  currentUser: CurrentUser | null
+  profileLoading: boolean
+  refreshCurrentUser: () => Promise<void>
+  signOut: () => void
   toasts: ToastMessage[]
-  taskModalOpen: boolean
-  taskModalRobotId?: string
+  startCleaningModalOpen: boolean
+  startCleaningModalRobotId?: string
   showToast: (
     tone: ToastMessage['tone'],
     title: string,
     description?: string,
   ) => void
-  updateRobot: (id: string, patch: Partial<Robot>) => void
-  addRobot: (robot: Robot) => void
-  addTask: (task: CleaningTask) => void
-  setTaskStatus: (id: string, status: CleaningTask['status']) => void
-  addAlert: (
-    title: string,
-    robotId: string,
-    severity: AlertSeverity,
-    message: string,
-  ) => void
-  markAlertResolved: (id: string) => void
-  markMaintenanceInspected: (id: string) => void
-  openTaskModal: (robotId?: string) => void
-  closeTaskModal: () => void
+  openStartCleaningModal: (robotId?: string) => void
+  closeStartCleaningModal: () => void
 }
 
 const AppContext = createContext<AppContextValue | null>(null)
 
 let toastId = 0
 
-export function AppProvider({ children }: { children: ReactNode }) {
-  const [robots, setRobots] = useState<Robot[]>(initialRobots)
-  const [tasks, setTasks] = useState<CleaningTask[]>(initialTasks)
-  const [alerts, setAlerts] = useState<AlertItem[]>(initialAlerts)
-  const [maintenance, setMaintenance] =
-    useState<MaintenanceItem[]>(maintenanceItems)
+export function AppProvider({ children, onLogout }: { children: ReactNode; onLogout?: () => void }) {
+  const [robots, setRobots] = useState<Robot[]>([])
+  const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null)
+  const [profileLoading, setProfileLoading] = useState(true)
   const [toasts, setToasts] = useState<ToastMessage[]>([])
-  const [taskModalOpen, setTaskModalOpen] = useState(false)
-  const [taskModalRobotId, setTaskModalRobotId] = useState<string | undefined>(
+  const [startCleaningModalOpen, setStartCleaningModalOpen] = useState(false)
+  const [startCleaningModalRobotId, setStartCleaningModalRobotId] = useState<string | undefined>(
     undefined,
   )
+
+  const refreshCurrentUser = useCallback(async () => {
+    setProfileLoading(true)
+    try {
+      setCurrentUser(await getCurrentProfile())
+    } catch {
+      setCurrentUser(null)
+    } finally {
+      setProfileLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void refreshCurrentUser()
+  }, [refreshCurrentUser])
+
+  useEffect(() => {
+    if (profileLoading || !currentUser) {
+      setRobots([])
+      return
+    }
+    let active = true
+    getRobots()
+      .then((apiRobots) => {
+        if (!active) return
+        const mapped: Robot[] = apiRobots.map((r) => ({
+          id: String(r.id),
+          name: r.name,
+          model: r.model,
+          status: r.status,
+          location: r.location,
+        }))
+        setRobots(mapped)
+      })
+      .catch(() => {
+        if (active) setRobots([])
+      })
+    return () => { active = false }
+  }, [currentUser, profileLoading])
 
   const showToast = useCallback(
     (tone: ToastMessage['tone'], title: string, description?: string) => {
@@ -76,99 +91,36 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [],
   )
 
-  const updateRobot = useCallback((id: string, patch: Partial<Robot>) => {
-    setRobots((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)))
+  const openStartCleaningModal = useCallback((robotId?: string) => {
+    setStartCleaningModalRobotId(robotId)
+    setStartCleaningModalOpen(true)
   }, [])
 
-  const addRobot = useCallback((robot: Robot) => {
-    setRobots((prev) => [robot, ...prev])
+  const closeStartCleaningModal = useCallback(() => {
+    setStartCleaningModalOpen(false)
+    setStartCleaningModalRobotId(undefined)
   }, [])
 
-  const addTask = useCallback((task: CleaningTask) => {
-    setTasks((prev) => [task, ...prev])
-  }, [])
-
-  const setTaskStatus = useCallback(
-    (id: string, status: CleaningTask['status']) => {
-      setTasks((prev) =>
-        prev.map((t) => (t.id === id ? { ...t, status } : t)),
-      )
-    },
-    [],
-  )
-
-  const addAlert = useCallback(
-    (
-      title: string,
-      robotId: string,
-      severity: AlertSeverity,
-      message: string,
-    ) => {
-      setAlerts((prev) => [
-        {
-          id: `A-${Date.now()}`,
-          title,
-          robotId,
-          severity,
-          message,
-          time: 'Just now',
-          action:
-            severity === 'success'
-              ? 'View Report'
-              : severity === 'maintenance'
-                ? 'View Maintenance'
-                : 'View Robot',
-        },
-        ...prev,
-      ])
-    },
-    [],
-  )
-
-  const markAlertResolved = useCallback((id: string) => {
-    setAlerts((prev) =>
-      prev.map((a) => (a.id === id ? { ...a, resolved: true } : a)),
-    )
-  }, [])
-
-  const markMaintenanceInspected = useCallback((id: string) => {
-    setMaintenance((prev) =>
-      prev.map((m) =>
-        m.id === id ? { ...m, status: 'Inspected' as const } : m,
-      ),
-    )
-  }, [])
-
-  const openTaskModal = useCallback((robotId?: string) => {
-    setTaskModalRobotId(robotId)
-    setTaskModalOpen(true)
-  }, [])
-
-  const closeTaskModal = useCallback(() => {
-    setTaskModalOpen(false)
-    setTaskModalRobotId(undefined)
-  }, [])
+  const signOut = useCallback(() => {
+    logoutUser()
+    setCurrentUser(null)
+    onLogout?.()
+  }, [onLogout])
 
   return (
     <AppContext.Provider
       value={{
         robots,
-        tasks,
-        alerts,
-        maintenance,
+        currentUser,
+        profileLoading,
+        refreshCurrentUser,
+        signOut,
         toasts,
-        taskModalOpen,
-        taskModalRobotId,
+        startCleaningModalOpen,
+        startCleaningModalRobotId,
         showToast,
-        updateRobot,
-        addRobot,
-        addTask,
-        setTaskStatus,
-        addAlert,
-        markAlertResolved,
-        markMaintenanceInspected,
-        openTaskModal,
-        closeTaskModal,
+        openStartCleaningModal,
+        closeStartCleaningModal,
       }}
     >
       {children}

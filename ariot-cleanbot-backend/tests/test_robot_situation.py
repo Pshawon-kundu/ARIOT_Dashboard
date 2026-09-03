@@ -45,7 +45,7 @@ def client(monkeypatch):
     store = {
         "robots": [
             {
-                "id": 1,
+                "id": "9a8c8213-d2f7-4e9b-9a1b-5f25631b57cd",
                 "name": "CleanBot-01",
                 "model": "CB-X2",
                 "status": "cleaning",
@@ -57,8 +57,8 @@ def client(monkeypatch):
         ],
         "cleaning_events": [
             {
-                "id": 1,
-                "robot_id": 1,
+                "id": "evt-0001",
+                "robot_id": "9a8c8213-d2f7-4e9b-9a1b-5f25631b57cd",
                 "type": "heavy_dirt",
                 "location": "Floor 3",
                 "description": "dense dust",
@@ -66,8 +66,8 @@ def client(monkeypatch):
                 "handled_automatically": True,
             },
             {
-                "id": 2,
-                "robot_id": 1,
+                "id": "evt-0002",
+                "robot_id": "9a8c8213-d2f7-4e9b-9a1b-5f25631b57cd",
                 "type": "obstacle",
                 "location": "Wing B",
                 "description": "box",
@@ -75,8 +75,8 @@ def client(monkeypatch):
                 "handled_automatically": True,
             },
             {
-                "id": 3,
-                "robot_id": 1,
+                "id": "evt-0003",
+                "robot_id": "9a8c8213-d2f7-4e9b-9a1b-5f25631b57cd",
                 "type": "spill",
                 "location": "cafeteria",
                 "description": "coffee",
@@ -86,7 +86,6 @@ def client(monkeypatch):
         ],
     }
     fake = FakeSupabase(store)
-    monkeypatch.setattr(rs, "supabase", fake)
     monkeypatch.setattr(supabase_module, "supabase", fake)
     monkeypatch.setattr(
         auth_module,
@@ -97,11 +96,11 @@ def client(monkeypatch):
 
 
 def test_situation_found(client):
-    r = client.get("/robots/1/situation", headers=AUTH_HEADERS)
+    r = client.get("/robots/9a8c8213-d2f7-4e9b-9a1b-5f25631b57cd/situation", headers=AUTH_HEADERS)
     assert r.status_code == 200
     body = r.json()
 
-    assert body["robot"]["id"] == 1
+    assert body["robot"]["id"] == "9a8c8213-d2f7-4e9b-9a1b-5f25631b57cd"
     assert body["robot"]["name"] == "CleanBot-01"
     assert body["robot"]["model"] == "CB-X2"
     assert body["robot"]["status"] == "cleaning"
@@ -122,6 +121,6 @@ def test_situation_found(client):
 
 
 def test_situation_not_found(client):
-    r = client.get("/robots/999/situation", headers=AUTH_HEADERS)
+    r = client.get("/robots/00000000-0000-0000-0000-000000000000/situation", headers=AUTH_HEADERS)
     assert r.status_code == 404
     assert "not found" in r.json()["detail"].lower()

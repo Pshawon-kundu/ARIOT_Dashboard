@@ -2,46 +2,57 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Bell,
-  Building2,
   CheckCircle2,
   ChevronDown,
-  HelpCircle,
-  MapPin,
+  LogOut,
   Play,
   Search,
-  TriangleAlert,
-  Wrench,
+  Settings,
+  User,
   X,
 } from 'lucide-react'
 import { useApp } from '../../context/AppContext'
+import { getNotifications, getSimulatorRobot, useApi, usePolling } from '../../services/api'
 
-const facilities = ['Main Facility', 'Building A', 'Building B']
-
-const notificationIcon: Record<string, typeof Bell> = {
-  warning: TriangleAlert,
-  maintenance: Wrench,
-  success: CheckCircle2,
-  info: Bell,
+function formatNotifTime(iso: string | undefined): string {
+  if (!iso) return 'Recently'
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return 'Recently'
+  const now = new Date()
+  const diffMs = now.getTime() - d.getTime()
+  const diffMins = Math.floor(diffMs / 60000)
+  if (diffMins < 1) return 'Just now'
+  if (diffMins < 60) return `${diffMins}m ago`
+  const diffHrs = Math.floor(diffMins / 60)
+  if (diffHrs < 24) return `${diffHrs}h ago`
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
-export function GlobalHeader() {
-  const { openTaskModal, alerts } = useApp()
+export function GlobalHeader({ onLogout }: { onLogout?: () => void }) {
+  const { robots, openStartCleaningModal, currentUser, signOut } = useApp()
   const navigate = useNavigate()
-  const [facility, setFacility] = useState(facilities[0])
-  const [facilityOpen, setFacilityOpen] = useState(false)
-  const [notifOpen, setNotifOpen] = useState(false)
   const [query, setQuery] = useState('')
-  const facilityRef = useRef<HTMLDivElement>(null)
   const notifRef = useRef<HTMLDivElement>(null)
+  const profileRef = useRef<HTMLDivElement>(null)
+  const [notifOpen, setNotifOpen] = useState(false)
+  const [profileOpen, setProfileOpen] = useState(false)
 
-  const unread = alerts.filter((a) => !a.resolved).length
+  const { data: notifications } = usePolling(getNotifications, 5000, [])
+  const { data: simInfo } = useApi(getSimulatorRobot, [])
+
+  const unreadCount = notifications?.filter((n) => !n.read).length ?? 0
+
+  const simulatorRobotId = simInfo?.available ? simInfo.robot_id : null
+  const simulatorRobot = simulatorRobotId
+    ? robots.find((r) => r.id === simulatorRobotId) ?? null
+    : null
 
   useEffect(() => {
     const onClick = (e: MouseEvent) => {
-      if (facilityRef.current && !facilityRef.current.contains(e.target as Node))
-        setFacilityOpen(false)
       if (notifRef.current && !notifRef.current.contains(e.target as Node))
         setNotifOpen(false)
+      if (profileRef.current && !profileRef.current.contains(e.target as Node))
+        setProfileOpen(false)
     }
     document.addEventListener('mousedown', onClick)
     return () => document.removeEventListener('mousedown', onClick)
@@ -52,45 +63,13 @@ export function GlobalHeader() {
     if (query.trim()) navigate(`/robots?q=${encodeURIComponent(query.trim())}`)
   }
 
+  const handleStartCleaning = () => {
+    openStartCleaningModal(simulatorRobot?.id)
+  }
+
   return (
     <header className="sticky top-0 z-40 flex h-[68px] shrink-0 items-center gap-4 border-b border-line bg-white/95 px-7 backdrop-blur">
-      {/* Facility selector */}
-      <div ref={facilityRef} className="relative shrink-0">
-        <button
-          type="button"
-          onClick={() => setFacilityOpen((o) => !o)}
-          aria-label="Select facility"
-          className="flex h-10 items-center gap-2.5 rounded-[10px] border border-line bg-white px-3 text-sm font-semibold text-ink transition-colors hover:bg-app focus-visible:outline-brand"
-        >
-          <Building2 size={17} className="text-brand" />
-          <span className="hidden md:inline">{facility}</span>
-          <ChevronDown size={15} className="text-ink-muted" />
-        </button>
-        {facilityOpen && (
-          <div className="absolute left-0 top-12 z-50 w-56 overflow-hidden rounded-xl border border-line bg-white py-1.5 shadow-card-hover animate-fade-in">
-            <p className="px-3.5 pb-1 pt-1 text-[11px] font-semibold uppercase tracking-wider text-ink-muted">
-              Facilities
-            </p>
-            {facilities.map((f) => (
-              <button
-                key={f}
-                onClick={() => {
-                  setFacility(f)
-                  setFacilityOpen(false)
-                }}
-                className={`flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-[13.5px] font-medium transition-colors hover:bg-app ${
-                  f === facility ? 'text-brand' : 'text-ink'
-                }`}
-              >
-                <MapPin size={15} className={f === facility ? 'text-brand' : 'text-ink-muted'} />
-                {f}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Global search */}
+      {/* Search */}
       <form onSubmit={handleSearch} className="relative flex-1 max-w-[460px]">
         <Search
           size={16}
@@ -106,11 +85,12 @@ export function GlobalHeader() {
       </form>
 
       <div className="ml-auto flex items-center gap-2.5">
-        {/* Primary global action */}
+        {/* Start Cleaning */}
         <button
           type="button"
-          onClick={() => openTaskModal()}
-          className="flex h-10 items-center gap-2 rounded-[10px] bg-brand px-4 text-[14px] font-semibold text-white shadow-sm transition-colors hover:bg-brand-dark focus-visible:outline-brand"
+          onClick={handleStartCleaning}
+          disabled={!simulatorRobot}
+          className="flex h-10 items-center gap-2 rounded-[10px] bg-brand px-4 text-[14px] font-semibold text-white shadow-sm transition-colors hover:bg-brand-dark focus-visible:outline-brand disabled:cursor-not-allowed disabled:opacity-50"
         >
           <Play size={15} className="fill-current" />
           <span className="hidden sm:inline">Start Cleaning</span>
@@ -120,14 +100,14 @@ export function GlobalHeader() {
         <div ref={notifRef} className="relative">
           <button
             type="button"
-            onClick={() => setNotifOpen((o) => !o)}
+            onClick={() => { setNotifOpen((o) => !o); setProfileOpen(false) }}
             aria-label="Notifications"
             className="relative flex h-10 w-10 items-center justify-center rounded-[10px] border border-line bg-white text-ink-secondary transition-colors hover:bg-app focus-visible:outline-brand"
           >
             <Bell size={18} />
-            {unread > 0 && (
+            {unreadCount > 0 && (
               <span className="absolute -right-1 -top-1 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-danger px-1 text-[11px] font-bold text-white ring-2 ring-white">
-                {unread}
+                {unreadCount}
               </span>
             )}
           </button>
@@ -144,39 +124,39 @@ export function GlobalHeader() {
                 </button>
               </div>
               <div className="max-h-[320px] divide-y divide-line/80 overflow-y-auto scrollbar-thin">
-                {alerts.slice(0, 5).map((a) => {
-                  const Icon = notificationIcon[a.severity] ?? Bell
+                {(!notifications || notifications.length === 0) && (
+                  <p className="px-4 py-8 text-center text-[13px] text-ink-muted">
+                    No notifications
+                  </p>
+                )}
+                {(notifications ?? []).slice(0, 5).map((n) => {
+                  const Icon = n.read ? Bell : CheckCircle2
                   return (
                     <button
-                      key={a.id}
+                      key={n.id}
                       onClick={() => {
                         setNotifOpen(false)
-                        navigate(
-                          a.action === 'View Report'
-                            ? '/reports'
-                            : `/robots/${a.robotId}`,
-                        )
+                        if (n.robot_id) navigate(`/robots/${n.robot_id}`)
+                        else navigate('/alerts')
                       }}
                       className="flex w-full items-start gap-2.5 px-4 py-3 text-left transition-colors hover:bg-app"
                     >
                       <span
                         className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${
-                          a.severity === 'success'
-                            ? 'bg-success-pale text-success'
-                            : a.severity === 'maintenance'
-                              ? 'bg-warning-pale text-warning'
-                              : a.severity === 'info'
-                                ? 'bg-brand-pale text-brand'
-                                : 'bg-danger-pale text-danger'
+                          n.read
+                            ? 'bg-idle-pale text-ink-muted'
+                            : 'bg-brand-pale text-brand'
                         }`}
                       >
                         <Icon size={14} />
                       </span>
                       <span className="min-w-0">
-                        <span className="block text-[13px] font-semibold text-ink">
-                          {a.title}
+                        <span className={`block text-[13px] font-semibold ${n.read ? 'text-ink-secondary' : 'text-ink'}`}>
+                          {n.message || 'Notification'}
                         </span>
-                        <span className="block text-xs text-ink-muted">{a.time}</span>
+                        <span className="block text-xs text-ink-muted">
+                          {formatNotifTime(n.created_at)}
+                        </span>
                       </span>
                     </button>
                   )
@@ -195,16 +175,59 @@ export function GlobalHeader() {
           )}
         </div>
 
-        {/* Help */}
-        <button
-          type="button"
-          aria-label="Help"
-          title="Help"
-          className="flex h-10 w-10 items-center justify-center rounded-[10px] border border-line bg-white text-ink-secondary transition-colors hover:bg-app focus-visible:outline-brand"
-        >
-          <HelpCircle size={18} />
-        </button>
+        {/* Account menu */}
+        <div ref={profileRef} className="relative">
+          <button
+            type="button"
+            aria-label="Open account menu"
+            aria-expanded={profileOpen}
+            onClick={() => { setProfileOpen((open) => !open); setNotifOpen(false) }}
+            className="flex h-10 items-center gap-2 rounded-[10px] border border-line bg-white pl-1.5 pr-2.5 text-ink-secondary transition-colors hover:bg-app focus-visible:outline-brand"
+          >
+            <span className="flex h-7 w-7 items-center justify-center overflow-hidden rounded-full bg-brand-pale text-[10px] font-bold text-brand">
+              {currentUser?.avatar_url ? (
+                <img src={currentUser.avatar_url} alt="" className="h-full w-full object-cover" />
+              ) : currentUser ? (
+                getInitials(currentUser.name)
+              ) : (
+                <User size={14} />
+              )}
+            </span>
+            <ChevronDown size={14} />
+          </button>
+          {profileOpen && (
+            <div className="absolute right-0 top-12 z-50 w-52 overflow-hidden rounded-xl border border-line bg-white py-1.5 shadow-card-hover animate-fade-in">
+              {currentUser && (
+                <div className="border-b border-line px-3 py-2">
+                  <p className="truncate text-[13px] font-semibold text-ink">{currentUser.name}</p>
+                  <p className="truncate text-[11px] text-ink-muted">{currentUser.email}</p>
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={() => { setProfileOpen(false); navigate('/account') }}
+                className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13px] font-medium text-ink-secondary hover:bg-app hover:text-ink"
+              >
+                <Settings size={15} />
+                Account Settings
+              </button>
+              <button
+                type="button"
+                onClick={() => { signOut(); setProfileOpen(false); onLogout?.() }}
+                className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13px] font-medium text-ink-secondary hover:bg-app hover:text-ink"
+              >
+                <LogOut size={15} />
+                Sign Out
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </header>
   )
+}
+
+function getInitials(name: string): string {
+  const words = name.trim().split(/\s+/).filter(Boolean)
+  return words.slice(0, 2).map((word) => word[0]?.toUpperCase()).join('') || 'U'
 }

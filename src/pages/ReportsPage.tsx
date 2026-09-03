@@ -1,411 +1,468 @@
-import { useState, type ReactNode } from 'react'
-import { useNavigate } from 'react-router-dom'
-import {
-  CalendarDays,
-  ChevronDown,
-  FileDown,
-  Flame,
-  Lightbulb,
-  MapPin,
-  RotateCcw,
-  Sparkles,
-  Target,
-  TriangleAlert,
-  Wrench,
-} from 'lucide-react'
-import {
-  Area,
-  AreaChart,
-  CartesianGrid,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts'
+import { useState, useMemo, Fragment } from 'react'
+import { ChevronDown, RefreshCw } from 'lucide-react'
 import { PageHeader } from '../components/layout/PageHeader'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { StatusBadge } from '../components/ui/StatusBadge'
-import { CleaningHeatmap } from '../components/map/CleaningHeatmap'
-import { useApp } from '../context/AppContext'
-import { coverageWeek, heatZones, frequentDirtyAreas, reportDetections } from '../data/mockData'
+import { EmptyState } from '../components/ui/EmptyState'
+import {
+  getCleaningJobs,
+  getCleaningJobDetail,
+  useApi,
+  type CleaningJob,
+  type CleaningJobDetail,
+} from '../services/api'
 
-const dateFilters = ['Today', '7 Days', '30 Days', 'Custom']
+type StatusFilter = 'all' | 'completed' | 'other'
+type DateFilter = 'all' | 'today' | '7d' | '30d'
+
+function isSameDay(iso: string | null): boolean {
+  if (!iso) return false
+  const d = new Date(iso)
+  const today = new Date()
+  return (
+    d.getFullYear() === today.getFullYear() &&
+    d.getMonth() === today.getMonth() &&
+    d.getDate() === today.getDate()
+  )
+}
+
+function isWithinDays(iso: string | null, days: number): boolean {
+  if (!iso) return false
+  const d = new Date(iso)
+  const cutoff = new Date()
+  cutoff.setDate(cutoff.getDate() - days)
+  return d >= cutoff
+}
+
+function calcDuration(startedAt: string | null, completedAt: string | null): string {
+  if (!startedAt || !completedAt) return 'N/A'
+  const start = new Date(startedAt).getTime()
+  const end = new Date(completedAt).getTime()
+  if (isNaN(start) || isNaN(end) || end < start) return 'N/A'
+  const mins = Math.round((end - start) / 60000)
+  if (mins < 1) return '<1 min'
+  if (mins < 60) return `${mins} min`
+  const h = Math.floor(mins / 60)
+  const m = mins % 60
+  return m > 0 ? `${h}h ${m}m` : `${h}h`
+}
+
+function formatDate(iso: string | null): string {
+  if (!iso) return 'N/A'
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return 'N/A'
+  return d.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  })
+}
+
+function formatDateTime(iso: string | null): string {
+  if (!iso) return 'N/A'
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return 'N/A'
+  return d.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+function Dropdown({
+  value,
+  options,
+  onChange,
+}: {
+  value: string
+  options: { value: string; label: string }[]
+  onChange: (v: string) => void
+}) {
+  return (
+    <div className="relative">
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="h-9 appearance-none rounded-[8px] border border-line bg-white pl-3 pr-7 text-[13px] font-medium text-ink shadow-card focus:border-brand focus:outline-none"
+      >
+        {options.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
+      </select>
+      <ChevronDown
+        size={12}
+        className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-ink-muted"
+      />
+    </div>
+  )
+}
 
 export function ReportsPage() {
-  const { openTaskModal, showToast, maintenance } = useApp()
-  const navigate = useNavigate()
-  const [range, setRange] = useState('7 Days')
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
+  const [robotFilter, setRobotFilter] = useState('all')
+  const [dateFilter, setDateFilter] = useState<DateFilter>('all')
+  const [expandedJobId, setExpandedJobId] = useState<string | null>(null)
+  const [detail, setDetail] = useState<CleaningJobDetail | null>(null)
+  const [detailLoading, setDetailLoading] = useState(false)
+  const [detailError, setDetailError] = useState<string | null>(null)
+  const [refreshTick, setRefreshTick] = useState(0)
 
-  const recommendations = [
-    {
-      icon: <Flame size={16} className="text-warning" />,
-      title: 'Main Entrance gets dirty most often between 12 PM and 2 PM.',
-      body: 'Consider adding an afternoon cleaning to keep it presentable.',
-      action: 'Schedule Cleaning',
-      onAction: () => openTaskModal(),
-    },
-    {
-      icon: <Sparkles size={16} className="text-brand" />,
-      title: 'Cafeteria required 3 additional spot cleans this week.',
-      body: 'A short daily spot clean may reduce repeat requests.',
-      action: 'Review Area',
-      onAction: () => showToast('info', 'Area review', 'Showing Cafeteria cleaning history.'),
-    },
-    {
-      icon: <MapPin size={16} className="text-danger" />,
-      title: 'Level 2 Lobby was missed twice this week.',
-      body: 'Check the schedule so this area is cleaned every weekday.',
-      action: 'View Cleaning History',
-      onAction: () => navigate('/cleaning'),
-    },
+  const { data: allJobs, loading, error } = useApi(
+    () => getCleaningJobs(),
+    [refreshTick],
+  )
+
+  const robots = useMemo(() => {
+    if (!allJobs) return []
+    const names = new Set<string>()
+    allJobs.forEach((j) => { if (j.robot_name) names.add(j.robot_name) })
+    return Array.from(names).sort()
+  }, [allJobs])
+
+  const filtered = useMemo(() => {
+    if (!allJobs) return []
+    return allJobs.filter((j) => {
+      if (statusFilter === 'completed' && j.status?.toLowerCase() !== 'completed') return false
+      if (statusFilter === 'other' && j.status?.toLowerCase() === 'completed') return false
+      if (robotFilter !== 'all' && j.robot_name !== robotFilter) return false
+      if (dateFilter === 'today' && !isSameDay(j.started_at)) return false
+      if (dateFilter === '7d' && !isWithinDays(j.started_at, 7)) return false
+      if (dateFilter === '30d' && !isWithinDays(j.started_at, 30)) return false
+      return true
+    })
+  }, [allJobs, statusFilter, robotFilter, dateFilter])
+
+  const completedJobs = useMemo(
+    () => (allJobs ?? []).filter((j) => j.status?.toLowerCase() === 'completed'),
+    [allJobs],
+  )
+
+  const todayJobs = useMemo(
+    () => (allJobs ?? []).filter((j) => isSameDay(j.started_at)),
+    [allJobs],
+  )
+
+  const avgCoverage = useMemo(() => {
+    const vals = completedJobs
+      .map((j) => j.coverage)
+      .filter((v): v is number => v != null && isFinite(v))
+    if (vals.length === 0) return 'N/A'
+    const sum = vals.reduce((a, b) => a + b, 0)
+    return `${Math.round(sum / vals.length)}%`
+  }, [completedJobs])
+
+  const statusOptions = useMemo(() => {
+    const hasOther = (allJobs ?? []).some((j) => j.status?.toLowerCase() !== 'completed')
+    const opts = [{ value: 'all', label: 'All Status' }]
+    opts.push({ value: 'completed', label: 'Completed' })
+    if (hasOther) opts.push({ value: 'other', label: 'In Progress' })
+    return opts
+  }, [allJobs])
+
+  const robotOptions = useMemo(
+    () => [
+      { value: 'all', label: 'All Robots' },
+      ...robots.map((n) => ({ value: n, label: n })),
+    ],
+    [robots],
+  )
+
+  const dateOptions = [
+    { value: 'all', label: 'All Time' },
+    { value: 'today', label: 'Today' },
+    { value: '7d', label: 'Last 7 Days' },
+    { value: '30d', label: 'Last 30 Days' },
   ]
+
+  const handleRefresh = () => setRefreshTick((t) => t + 1)
+
+  const handleRowClick = async (job: CleaningJob) => {
+    if (expandedJobId === job.id) {
+      setExpandedJobId(null)
+      setDetail(null)
+      return
+    }
+    setExpandedJobId(job.id)
+    setDetail(null)
+    setDetailError(null)
+    setDetailLoading(true)
+    try {
+      const d = await getCleaningJobDetail(job.id)
+      setDetail(d)
+    } catch {
+      setDetailError('Job details unavailable.')
+    } finally {
+      setDetailLoading(false)
+    }
+  }
+
+  const handleClearFilters = () => {
+    setStatusFilter('all')
+    setRobotFilter('all')
+    setDateFilter('all')
+  }
+
+  const hasFilters = statusFilter !== 'all' || robotFilter !== 'all' || dateFilter !== 'all'
 
   return (
     <div>
       <PageHeader
         title="Reports"
-        subtitle="See cleaning results and areas that may need more attention"
+        subtitle="Historical cleaning performance and job records."
       >
-        <div className="flex gap-2">
-          {dateFilters.map((d) => (
-            <button
-              key={d}
-              onClick={() => setRange(d)}
-              className={`rounded-full px-3.5 py-1.5 text-[13px] font-semibold transition-colors ${
-                range === d
-                  ? 'bg-ink text-white'
-                  : 'bg-white text-ink-secondary ring-1 ring-line hover:bg-idle-pale'
-              }`}
-            >
-              {d}
-            </button>
-          ))}
-        </div>
-        <div className="relative">
-          <CalendarDays
-            size={14}
-            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-secondary"
-          />
-          <select
-            defaultValue="All Robots"
-            className="h-10 appearance-none rounded-[10px] border border-line bg-white pl-8 pr-7 text-[13px] font-medium text-ink shadow-card focus:border-brand focus:outline-none"
-          >
-            <option>All Robots</option>
-            <option>CleanBot 01</option>
-            <option>CleanBot 02</option>
-            <option>CleanBot 03</option>
-          </select>
-          <ChevronDown
-            size={13}
-            className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-muted"
-          />
-        </div>
+        <Button
+          variant="secondary"
+          size="sm"
+          icon={<RefreshCw size={14} />}
+          onClick={handleRefresh}
+        >
+          Refresh
+        </Button>
       </PageHeader>
 
-      {/* This week summary */}
-      <p className="mb-3 text-[15px] font-bold text-ink">This Week</p>
-      <div className="grid grid-cols-4 gap-4">
-        <ReportStat
-          icon={<Target size={20} />}
-          tile="bg-brand-pale text-brand"
-          label="Average Coverage"
-          value="94%"
-        />
-        <ReportStat
-          icon={<MapPin size={20} />}
-          tile="bg-success-pale text-success"
-          label="Area Cleaned"
-          value="72,480 sq.ft"
-        />
-        <ReportStat
-          icon={<Sparkles size={20} />}
-          tile="bg-brand-pale text-brand"
-          label="Cleaning Jobs"
-          value="46"
-        />
-        <ReportStat
-          icon={<Flame size={20} />}
-          tile="bg-danger-pale text-danger"
-          label="Areas Needing Attention"
-          value="4"
-        />
-      </div>
-
-      {/* Heatmap + coverage chart */}
-      <div className="mt-4 grid grid-cols-3 gap-4">
-        <Card className="col-span-2">
-          <h2 className="text-[16px] font-bold text-ink">Cleaning Heatmap</h2>
-          <p className="mt-0.5 text-[13px] text-ink-secondary">
-            See where dirt was detected most often.
-          </p>
-          <div className="mt-4">
-            <CleaningHeatmap zones={heatZones} />
-          </div>
-        </Card>
-
-        <Card>
-          <h2 className="text-[16px] font-bold text-ink">Coverage Trend</h2>
-          <p className="mt-0.5 text-[13px] text-ink-secondary">Last 7 days · {range}</p>
-          <div className="mt-4 h-[280px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart
-                data={coverageWeek}
-                margin={{ top: 8, right: 8, left: -18, bottom: 0 }}
-              >
-                <defs>
-                  <linearGradient id="coverageFill" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#1769E0" stopOpacity={0.18} />
-                    <stop offset="100%" stopColor="#1769E0" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid stroke="#E7ECF3" strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="day" tick={{ fontSize: 12, fill: '#98A2B3' }} axisLine={false} tickLine={false} />
-                <YAxis domain={[80, 100]} tick={{ fontSize: 12, fill: '#98A2B3' }} axisLine={false} tickLine={false} />
-                <Tooltip
-                  formatter={(value) => [`${value}%`, 'Coverage']}
-                  contentStyle={{
-                    borderRadius: 10,
-                    border: '1px solid #E7ECF3',
-                    boxShadow: '0 4px 12px rgba(19,33,58,0.08)',
-                    fontSize: 13,
-                  }}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="coverage"
-                  stroke="#1769E0"
-                  strokeWidth={2.5}
-                  fill="url(#coverageFill)"
-                  dot={{ r: 3.5, fill: '#FFFFFF', stroke: '#1769E0', strokeWidth: 2 }}
-                  activeDot={{ r: 5 }}
-                />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-          <div className="mt-3 flex items-center justify-between rounded-xl bg-success-pale/70 px-4 py-3">
-            <span className="flex items-center gap-2 text-[13px] font-semibold text-[#18794E]">
-              <Sparkles size={14} />
-              Weekly average
-            </span>
-            <span className="text-[15px] font-bold text-[#18794E]">93.6%</span>
-          </div>
-        </Card>
-      </div>
-
-      {/* Frequently dirty areas */}
-      <div className="mt-4">
-        <div className="mb-3 flex items-center gap-2">
-          <Flame size={17} className="text-warning" />
-          <h2 className="text-[16px] font-bold text-ink">Frequently Dirty Areas</h2>
-        </div>
-        <div className="grid grid-cols-3 gap-4">
-          {frequentDirtyAreas.map((area) => (
-            <Card key={area.rank}>
-              <div className="flex items-center justify-between">
-                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-warning-pale text-[14px] font-bold text-warning">
-                  {area.rank}
-                </span>
-                <span className="rounded-full bg-app px-2.5 py-1 text-[11px] font-semibold text-ink-secondary">
-                  {area.detail}
-                </span>
-              </div>
-              <p className="mt-3 text-[15px] font-bold text-ink">{area.name}</p>
-              <p className="mt-0.5 text-[12.5px] text-ink-secondary">{area.events}</p>
-            </Card>
-          ))}
-        </div>
-      </div>
-
-      {/* What CleanBot noticed in the last completed job */}
-      <div className="mt-4">
-        <div className="mb-3 flex items-center gap-2">
-          <Sparkles size={17} className="text-brand" />
-          <h2 className="text-[16px] font-bold text-ink">What CleanBot Noticed</h2>
-        </div>
-        <Card>
-          <p className="text-[13px] text-ink-secondary">
-            Level 1 Daily Cleaning · Completed · CleanBot found and handled these automatically.
-          </p>
-          <div className="mt-4 grid grid-cols-3 gap-3 sm:grid-cols-6">
-            <DetectionFact label="Dirt hotspots" value={String(reportDetections.dirtHotspots)} />
-            <DetectionFact label="Spills" value={String(reportDetections.spills)} />
-            <DetectionFact label="Obstacles" value={String(reportDetections.obstacles)} />
-            <DetectionFact label="Extra passes" value={String(reportDetections.extraPasses)} />
-            <DetectionFact label="Adjustments" value={String(reportDetections.adjustments)} />
-            <DetectionFact label="Your action" value={reportDetections.intervention} />
-          </div>
-        </Card>
-      </div>
-
-      {/* Maintenance insights */}
-      <div className="mt-4">
-        <div className="mb-3 flex items-center gap-2">
-          <Wrench size={17} className="text-warning" />
-          <h2 className="text-[16px] font-bold text-ink">Maintenance Needed</h2>
-        </div>
-        <div className="grid grid-cols-2 gap-4">
-          {maintenance.map((item) => (
-            <Card key={item.id}>
-              <div className="flex items-center gap-3">
-                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-warning-pale text-warning">
-                  <Wrench size={18} />
-                </span>
-                <div>
-                  <p className="text-[14.5px] font-bold text-ink">{item.robotName}</p>
-                  <p className="text-xs text-ink-muted">{item.part}</p>
-                </div>
-                <StatusBadge
-                  status={item.status.toLowerCase()}
-                  tone={item.status === 'Inspected' ? 'green' : 'orange'}
-                />
-              </div>
-              <p className="mt-3 flex items-start gap-2 text-[13px] leading-relaxed text-ink-secondary">
-                <TriangleAlert size={14} className="mt-0.5 shrink-0 text-warning" />
-                {item.suggestedAction}
-              </p>
-            </Card>
-          ))}
-        </div>
-      </div>
-
-      {/* Recommended actions */}
-      <div className="mt-4">
-        <div className="mb-3 flex items-center gap-2">
-          <Lightbulb size={17} className="text-brand" />
-          <h2 className="text-[16px] font-bold text-ink">Recommended Actions</h2>
-        </div>
-        <div className="grid grid-cols-3 gap-4">
-          {recommendations.map((rec, i) => (
-            <Card key={i} className="flex flex-col">
-              <div className="flex items-start gap-3">
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-app">
-                  {rec.icon}
-                </span>
-                <div className="min-w-0">
-                  <p className="text-[13.5px] font-semibold leading-snug text-ink">{rec.title}</p>
-                  <p className="mt-1 text-[12.5px] leading-snug text-ink-secondary">{rec.body}</p>
-                </div>
-              </div>
-              <Button
-                variant="secondary"
-                size="sm"
-                className="mt-4 w-full"
-                onClick={rec.onAction}
-              >
-                {rec.action}
-              </Button>
-            </Card>
-          ))}
-        </div>
-      </div>
-
-      {/* Completed report */}
-      <Card className="mt-4">
-        <div className="flex flex-wrap items-start justify-between gap-4">
+      <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <Card className="flex items-center gap-3 py-3 px-4">
           <div>
-            <div className="flex items-center gap-3">
-              <h2 className="text-[17px] font-bold text-ink">Level 1 Daily Cleaning</h2>
-              <StatusBadge status="completed" />
-            </div>
-            <p className="mt-1 text-[13px] text-ink-secondary">
-              Robot: <span className="font-semibold text-ink">CleanBot 01</span> · {range} · May 20, 2025
-            </p>
+            <p className="text-[11px] font-medium text-ink-secondary">Total Jobs</p>
+            <p className="text-[22px] font-bold text-ink">{allJobs?.length ?? 0}</p>
           </div>
-          <div className="flex gap-2.5">
-            <Button
-              variant="secondary"
-              icon={<FileDown size={15} />}
-              onClick={() =>
-                showToast('info', 'Report downloaded', 'report-level1-daily-clean.pdf (demo)')
-              }
-            >
-              Download Report
-            </Button>
-            <Button
-              variant="secondary"
-              icon={<RotateCcw size={15} />}
-              onClick={() => openTaskModal()}
-            >
-              Schedule Again
-            </Button>
-            <Button
-              onClick={() =>
-                showToast('success', 'Report opened', 'Showing the full Level 1 Daily Cleaning report.')
-              }
-            >
-              View Details
-            </Button>
+        </Card>
+        <Card className="flex items-center gap-3 py-3 px-4">
+          <div>
+            <p className="text-[11px] font-medium text-ink-secondary">Completed</p>
+            <p className="text-[22px] font-bold text-ink">{completedJobs.length}</p>
           </div>
-        </div>
+        </Card>
+        <Card className="flex items-center gap-3 py-3 px-4">
+          <div>
+            <p className="text-[11px] font-medium text-ink-secondary">Jobs Today</p>
+            <p className="text-[22px] font-bold text-ink">{todayJobs.length}</p>
+          </div>
+        </Card>
+        <Card className="flex items-center gap-3 py-3 px-4">
+          <div>
+            <p className="text-[11px] font-medium text-ink-secondary">Avg Coverage</p>
+            <p className="text-[22px] font-bold text-ink">{avgCoverage}</p>
+          </div>
+        </Card>
+      </div>
 
-        <div className="mt-5 grid grid-cols-6 gap-4 border-t border-line pt-5">
-          <ReportFact label="Coverage" value="96%" highlight />
-          <ReportFact label="Area" value="11,820 sq.ft" />
-          <ReportFact label="Duration" value="1h 24m" />
-          <ReportFact label="Dirt Hotspots" value="8" />
-          <ReportFact label="Missed Areas" value="2" />
-          <ReportFact label="Water Used" value="14 L" />
-        </div>
-      </Card>
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <Dropdown
+          value={statusFilter}
+          options={statusOptions}
+          onChange={(v) => setStatusFilter(v as StatusFilter)}
+        />
+        <Dropdown
+          value={robotFilter}
+          options={robotOptions}
+          onChange={setRobotFilter}
+        />
+        <Dropdown
+          value={dateFilter}
+          options={dateOptions}
+          onChange={(v) => setDateFilter(v as DateFilter)}
+        />
+        {hasFilters && (
+          <button
+            onClick={handleClearFilters}
+            className="ml-1 text-[12px] font-medium text-brand hover:underline"
+          >
+            Clear filters
+          </button>
+        )}
+        <span className="ml-auto text-[12px] text-ink-muted">
+          {filtered.length} record{filtered.length !== 1 ? 's' : ''}
+        </span>
+      </div>
+
+      {loading && (
+        <Card className="py-10 text-center text-[13px] text-ink-secondary">
+          Loading reports…
+        </Card>
+      )}
+
+      {error && !loading && (
+        <Card className="py-10 text-center text-[13px] text-ink-secondary">
+          Reports are temporarily unavailable.
+        </Card>
+      )}
+
+      {!loading && !error && filtered.length === 0 && !hasFilters && (
+        <Card className="py-10">
+          <EmptyState
+            icon={null}
+            title="No cleaning history yet"
+            description="Completed cleaning missions will appear here."
+          />
+        </Card>
+      )}
+
+      {!loading && !error && filtered.length === 0 && hasFilters && (
+        <Card className="py-10">
+          <EmptyState
+            icon={null}
+            title="No jobs match the current filters"
+            description="Try adjusting or clearing the filters."
+          />
+        </Card>
+      )}
+
+      {!loading && !error && filtered.length > 0 && (
+        <Card className="overflow-hidden p-0">
+          <div className="overflow-x-auto">
+            <table className="w-full text-[13px]">
+              <thead>
+                <tr className="border-b border-line bg-app text-left text-[11px] font-semibold uppercase tracking-wide text-ink-secondary">
+                  <th className="whitespace-nowrap px-4 py-3">Robot</th>
+                  <th className="whitespace-nowrap px-4 py-3">Location</th>
+                  <th className="whitespace-nowrap px-4 py-3">Status</th>
+                  <th className="whitespace-nowrap px-4 py-3">Progress</th>
+                  <th className="whitespace-nowrap px-4 py-3">Coverage</th>
+                  <th className="whitespace-nowrap px-4 py-3">Started</th>
+                  <th className="whitespace-nowrap px-4 py-3">Completed</th>
+                  <th className="whitespace-nowrap px-4 py-3">Duration</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((job) => (
+                  <Fragment key={job.id}>
+                    <tr
+                      onClick={() => handleRowClick(job)}
+                      className={`cursor-pointer border-b border-line transition-colors hover:bg-idle-pale ${
+                        expandedJobId === job.id ? 'bg-brand-pale' : ''
+                      }`}
+                    >
+                      <td className="whitespace-nowrap px-4 py-3 font-semibold text-ink">
+                        {job.robot_name || 'N/A'}
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-3 text-ink-secondary">
+                        {job.zone || job.floor || 'N/A'}
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-3">
+                        <StatusBadge
+                          status={
+                            job.status?.toLowerCase() === 'completed'
+                              ? 'completed'
+                              : 'in_progress'
+                          }
+                        />
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-3 text-ink-secondary">
+                        {job.progress != null ? `${job.progress}%` : 'N/A'}
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-3 text-ink-secondary">
+                        {job.coverage != null ? `${job.coverage}%` : 'N/A'}
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-3 text-ink-secondary">
+                        {formatDate(job.started_at)}
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-3 text-ink-secondary">
+                        {job.completed_at ? formatDate(job.completed_at) : '—'}
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-3 text-ink-secondary">
+                        {calcDuration(job.started_at, job.completed_at)}
+                      </td>
+                    </tr>
+                    {expandedJobId === job.id && (
+                      <tr key={`${job.id}-detail`}>
+                        <td colSpan={8} className="bg-brand-pale px-6 py-4">
+                          {detailLoading && (
+                            <p className="text-[12.5px] text-ink-secondary">
+                              Loading job details…
+                            </p>
+                          )}
+                          {detailError && !detailLoading && (
+                            <p className="text-[12.5px] text-danger">{detailError}</p>
+                          )}
+                          {detail && !detailLoading && (
+                            <div className="flex flex-wrap gap-6">
+                              <DetailField
+                                label="Floor"
+                                value={detail.floor || 'N/A'}
+                              />
+                              <DetailField
+                                label="Zone"
+                                value={detail.zone || 'N/A'}
+                              />
+                              <DetailField
+                                label="Progress"
+                                value={
+                                  detail.progress != null
+                                    ? `${detail.progress}%`
+                                    : 'N/A'
+                                }
+                              />
+                              <DetailField
+                                label="Coverage"
+                                value={
+                                  detail.coverage != null
+                                    ? `${detail.coverage}%`
+                                    : 'N/A'
+                                }
+                              />
+                              <DetailField
+                                label="Started"
+                                value={formatDateTime(detail.started_at)}
+                              />
+                              <DetailField
+                                label="Completed"
+                                value={
+                                  detail.completed_at
+                                    ? formatDateTime(detail.completed_at)
+                                    : '—'
+                                }
+                              />
+                              <DetailField
+                                label="Duration"
+                                value={calcDuration(
+                                  detail.started_at,
+                                  detail.completed_at,
+                                )}
+                              />
+                              {detail.path && (
+                                <DetailField
+                                  label="Path"
+                                  value={detail.path}
+                                />
+                              )}
+                              <div>
+                                <p className="text-[11px] font-medium text-ink-secondary">
+                                  Events
+                                </p>
+                                <p className="mt-1 text-[13px] text-ink">
+                                  {detail.detected_events &&
+                                  detail.detected_events.length > 0
+                                    ? detail.detected_events.join(', ')
+                                    : 'No recorded events'}
+                                </p>
+                              </div>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
     </div>
   )
 }
 
-function ReportStat({
-  icon,
-  tile,
-  label,
-  value,
-}: {
-  icon: ReactNode
-  tile: string
-  label: string
-  value: string
-}) {
+function DetailField({ label, value }: { label: string; value: string }) {
   return (
-    <Card className="flex items-center gap-3">
-      <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${tile}`}>
-        {icon}
-      </div>
-      <div className="min-w-0">
-        <p className="text-[11.5px] font-medium leading-tight text-ink-secondary">{label}</p>
-        <p className="mt-0.5 text-[18px] font-bold leading-tight text-ink">{value}</p>
-      </div>
-    </Card>
-  )
-}
-
-function ReportFact({
-  label,
-  value,
-  highlight = false,
-}: {
-  label: string
-  value: string
-  highlight?: boolean
-}) {
-  return (
-    <div className="rounded-xl bg-app px-4 py-3">
-      <p className="text-[11.5px] font-medium text-ink-secondary">{label}</p>
-      <p className={`mt-1 text-[16px] font-bold ${highlight ? 'text-brand-dark' : 'text-ink'}`}>
-        {value}
-      </p>
-    </div>
-  )
-}
-
-function DetectionFact({
-  label,
-  value,
-}: {
-  label: string
-  value: string
-}) {
-  return (
-    <div className="rounded-xl border border-line bg-app/50 px-3 py-3 text-center">
-      <p className="text-[20px] font-bold text-ink">{value}</p>
-      <p className="mt-0.5 text-[11px] font-medium text-ink-secondary">{label}</p>
+    <div>
+      <p className="text-[11px] font-medium text-ink-secondary">{label}</p>
+      <p className="mt-1 text-[13px] text-ink">{value}</p>
     </div>
   )
 }
