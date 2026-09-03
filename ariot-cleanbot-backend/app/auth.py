@@ -32,7 +32,6 @@ if _DEV_MODE:
         logging.error(
             "Development auth is unavailable because DEV_JWT_SECRET is not configured."
         )
-
 bearer = HTTPBearer(auto_error=False)
 _jwks_client: Optional[PyJWKClient] = None
 
@@ -167,3 +166,12 @@ def get_current_user(
         facility_id=profile.get("facility_id"),
         avatar_path=profile.get("avatar_path"),
     )
+
+
+def require_role(*allowed_roles: str):
+    def role_dependency(user: User = Depends(get_current_user)) -> User:
+        if user.role not in allowed_roles:
+            raise HTTPException(status_code=403, detail="Insufficient permissions")
+        return user
+
+    return role_dependency

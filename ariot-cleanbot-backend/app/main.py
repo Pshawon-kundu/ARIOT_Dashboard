@@ -11,6 +11,7 @@ from app.routers import robot_situation
 from app.routers import cleaning
 from app.routers import auth
 from app.routers import simulator
+from app.routers import facilities
 
 app = FastAPI(
     title="ARIOT CleanBot API"
@@ -35,6 +36,7 @@ app.include_router(robot_situation.router)
 app.include_router(cleaning.router)
 app.include_router(auth.router)
 app.include_router(simulator.router)
+app.include_router(facilities.router)
 
 
 @app.get("/")
