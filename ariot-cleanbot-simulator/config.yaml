@@ -1,0 +1,179 @@
+# ===================================================================
+# ARIOT CleanBot Digital Twin Simulator - Configuration
+# All simulator parameters are defined here. Tune without touching code.
+# ===================================================================
+
+simulation:
+  robot_id: "9a8c8213-d2f7-4e9b-9a1b-5f25631b57cd"
+  sensor_dt: 0.1            # internal sensor tick (100 ms -> 10 Hz)
+  state_publish_dt: 1.0     # dashboard / status publication (1 s)
+  autostart: true           # begin simulating when the API server starts
+  random_seed: 42           # set to null for non-deterministic runs
+
+robot:
+  init_position: [3.5, 3.5, 0.0]   # x [m], y [m], yaw [rad]
+  wheel_base: 0.45                # distance between drive wheels [m]
+  wheel_radius: 0.16              # drive wheel radius [m]
+  max_speed: 1.2                  # max forward speed [m/s]
+  max_turn_rate: 1.5              # max yaw rate [rad/s]
+  accel_limit: 1.0                # wheel acceleration limit [m/s^2]
+  footprint_radius: 0.30          # robot radius used for clearance analysis
+
+battery:
+  start_level: 100.0              # percent
+  drain_per_second: 0.06          # percent per second while working
+  charge_per_second: 1.5          # percent per second while docked
+  low_threshold: 25.0             # return-to-dock trigger
+  critical_threshold: 10.0        # emergency level
+
+water:
+  start_level: 100.0              # percent
+  drain_per_second: 0.05          # percent per second while cleaning
+  spill_drain_multiplier: 1.6     # extra water usage during spill BOOST
+  refill_at_dock: true            # refill tank while charging at dock
+
+waste:
+  start_level: 0.0                # percent
+  fill_per_second: 0.004          # percent per second while cleaning
+  solid_waste_fill: 2.5           # percent added per solid debris pickup
+  empty_at_dock: true             # empty container while docked
+  needs_empty_threshold: 90.0     # high-level warning threshold
+
+cleaning:
+  default_mode: "STANDARD"        # ECO | STANDARD | INTENSE | BOOST
+  intensity_multiplier:
+    ECO: 0.6
+    STANDARD: 1.0
+    INTENSE: 1.5
+    BOOST: 2.0
+  heavy_dirt_mode: "INTENSE"
+  heavy_dirt_duration: 30.0       # seconds
+  spill_mode: "BOOST"
+  spill_duration: 45.0            # seconds
+  waypoint_tolerance: 0.35        # arrival radius [m]
+  base_speed: 1.0                 # cruise speed along path [m/s]
+  turn_gain: 2.5                  # heading-error -> yaw-rate gain [1/s]
+  approach_slowdown: 1.2          # start slowing within this distance [m]
+
+encoders:
+  ticks_per_revolution: 360       # encoder counts per wheel revolution
+  noise_std: 1.5                  # tick noise (2-sigma ~ realistic slop)
+  velocity_window_s: 0.5          # rolling window for velocity estimation
+
+imu:
+  gravity: 9.81                   # m/s^2
+  accel_noise_std: [0.06, 0.06, 0.06]
+  gyro_noise_std: [0.001, 0.001, 0.01]
+  gyro_bias: [0.0005, 0.0005, 0.002]
+  yaw_drift_noise_std: 0.002      # random-walk on integrated yaw
+
+lidar:
+  range_min: 0.05                 # m
+  range_max: 30.0                 # m
+  angular_resolution_deg: 1.0     # 360 beams
+  noise_std: 0.02                 # m
+  failure_rate: 0.01              # probability of a NaN / drop-out beam
+
+environment:
+  name: "ARIOT Demo Facility"
+  size: [30.0, 14.0]
+  rooms:
+    Lobby:
+      bounds: [2.0, 2.0, 10.0, 12.0]
+    Corridor A:
+      bounds: [10.0, 8.0, 20.0, 11.0]
+    East Wing:
+      bounds: [20.0, 2.0, 28.0, 12.0]
+  walls:
+    # outer boundary (counter-clockwise)
+    - [0.0, 0.0, 30.0, 0.0]
+    - [30.0, 0.0, 30.0, 14.0]
+    - [0.0, 14.0, 30.0, 14.0]
+    - [0.0, 0.0, 0.0, 14.0]
+    # lobby right wall (door opening between y=8 and y=11)
+    - [10.0, 2.0, 10.0, 8.0]
+    - [10.0, 11.0, 10.0, 12.0]
+    # corridor upper / lower walls
+    - [10.0, 11.0, 20.0, 11.0]
+    - [10.0, 8.0, 20.0, 8.0]
+    # east wing left wall (door opening between y=8 and y=11)
+    - [20.0, 2.0, 20.0, 8.0]
+    - [20.0, 11.0, 20.0, 12.0]
+  obstacles:
+    - name: "Lobby reception desk"
+      bounds: [4.5, 5.8, 5.5, 6.8]
+    - name: "Lobby pillar"
+      bounds: [6.0, 3.6, 7.0, 4.6]
+    - name: "Corridor A pillar"
+      bounds: [14.2, 8.4, 15.8, 8.8]
+    - name: "East Wing work table"
+      bounds: [24.2, 8.4, 25.8, 9.2]
+    - name: "East Wing pillar"
+      bounds: [25.5, 3.0, 26.5, 4.0]
+    - name: "Restricted Area"
+      bounds: [9.3, 3.5, 14.7, 7.5]
+      restricted: true
+  doors:
+    - name: "Lobby / Corridor A"
+      position_x: 10.0
+      y_min: 8.2
+      y_max: 10.8
+    - name: "Corridor A / East Wing"
+      position_x: 20.0
+      y_min: 8.2
+      y_max: 10.8
+
+navigation:
+  dock_position: [3.5, 3.5, 0.0]  # charging dock (in Lobby)
+  waypoint_tolerance: 0.35        # arrival radius [m]
+  cleaning_route:
+    # Lobby boustrophedon sweep
+    - [3.5, 10.5, "Cleaning Lobby - Row A1"]
+    - [8.5, 10.5, "Cleaning Lobby - Row A2"]
+    - [8.5, 7.5, "Cleaning Lobby - Row B1"]
+    - [3.5, 7.5, "Cleaning Lobby - Row B2"]
+    - [3.5, 4.5, "Cleaning Lobby - Row C1"]
+    - [8.5, 4.5, "Cleaning Lobby - Row C2"]
+    # Transit through door -> Corridor A
+    - [9.6, 9.5, "Transit to Corridor A"]
+    - [10.6, 9.5, "Corridor A - Entrance"]
+    # Corridor A sweep
+    - [13.0, 9.5, "Cleaning Corridor A - Zone 1"]
+    - [16.0, 9.5, "Cleaning Corridor A - Zone 2"]
+    - [19.4, 9.5, "Cleaning Corridor A - Zone 3"]
+    # Transit through door -> East Wing
+    - [20.6, 9.5, "East Wing - Entrance"]
+    # East Wing sweep
+    - [23.5, 10.5, "Cleaning East Wing - Row A1"]
+    - [26.5, 10.5, "Cleaning East Wing - Row A2"]
+    - [26.5, 7.5, "Cleaning East Wing - Row B1"]
+    - [23.5, 7.5, "Cleaning East Wing - Row B2"]
+    - [23.5, 4.5, "Cleaning East Wing - Row C1"]
+    - [26.5, 4.5, "Cleaning East Wing - Row C2"]
+    # Return transit back through Corridor A to Lobby
+    - [19.4, 9.5, "Return transit - Corridor A"]
+    - [13.0, 9.5, "Return transit - Corridor A"]
+    - [9.6, 9.5, "Return transit - Lobby"]
+    - [3.5, 9.0, "Return transit - Lobby"]
+
+events:
+  enabled: true
+  max_history: 120
+  probabilities_per_second:
+    heavy_dirt: 0.020
+    spill_detected: 0.012
+    temporary_obstacle: 0.008
+    solid_waste: 0.009
+  temporary_obstacle_duration: 15.0  # seconds an obstacle stays mapped
+  confidence_ranges:
+    heavy_dirt: [0.80, 0.98]
+    spill_detected: [0.75, 0.99]
+    temporary_obstacle: [0.70, 0.95]
+    solid_waste: [0.60, 0.97]
+
+api:
+  host: "127.0.0.1"
+  port: 8100
+  cors_origins:
+    - "http://localhost:5173"
+    - "http://127.0.0.1:5173"

@@ -10,7 +10,7 @@ from typing import Any, Dict, Optional
 
 import httpx
 
-SIMULATOR_BASE_URL = os.getenv("SIMULATOR_URL", "http://127.0.0.1:8100")
+SIMULATOR_URL = os.getenv("SIMULATOR_URL", "http://127.0.0.1:8100")
 
 _client: Optional[httpx.Client] = None
 
@@ -18,7 +18,7 @@ _client: Optional[httpx.Client] = None
 def _get_client() -> httpx.Client:
     global _client
     if _client is None or _client.is_closed:
-        _client = httpx.Client(base_url=SIMULATOR_BASE_URL, timeout=5.0)
+        _client = httpx.Client(base_url=SIMULATOR_URL, timeout=5.0)
     return _client
 
 
