@@ -5,6 +5,13 @@ status / pose), runs the navigation controller, feeds the sensor models,
 applies event consequences and publishes snapshots for the REST API.
 When running it executes on a background thread so FastAPI stays
 responsive; ``reset()`` rebuilds the whole twin from configuration.
+
+Dynamic mission generation (Phase S1):
+  On first cleaning start, the engine builds a full coverage mission from
+  the CoverageGrid and A* planner. The mission follows a farthest-first
+  room order (via A* path cost), transits with A*, and cleans each room
+  with boustrophedon lanes. Area-based coverage tracking replaces the
+  legacy distance-based lap counter.
 """
 from __future__ import annotations
 
@@ -15,13 +22,15 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 from app.core.config import Config, get_config
+from app.sim.coverage import CoverageGrid, generate_boustrophedon_lanes, split_lanes_by_obstacles
 from app.sim.encoders import EncoderSimulator
 from app.sim.environment import VirtualFacility
 from app.sim.events import EventGenerator, SimEvent
 from app.sim.imu import ImuSimulator
 from app.sim.lidar import LidarSimulator
 from app.sim.motion import DifferentialDrive
-from app.sim.navigation import NavigationSimulator
+from app.sim.navigation import NavigationSimulator, Waypoint
+from app.sim.planner import AStarPlanner, compute_room_costs
 from app.sim.state import RobotStatus
 
 
@@ -56,6 +65,10 @@ class SimulationEngine:
         self.lidar: LidarSimulator
         self.navigation: NavigationSimulator
         self.events: EventGenerator
+        self.coverage_grid: Optional[CoverageGrid] = None
+        self.planner: Optional[AStarPlanner] = None
+        self._mission_built: bool = False
+        self._prev_pose: Optional[Tuple[float, float]] = None
         self._build_components()
 
     # ------------------------------------------------------------------
@@ -67,13 +80,38 @@ class SimulationEngine:
         self.encoders = EncoderSimulator(self.config, self._rng)
         self.imu = ImuSimulator(self.config, self._rng)
         self.lidar = LidarSimulator(self.config, self._rng)
-        self.navigation = NavigationSimulator(self.config, self._rng)
+
+        self.coverage_grid = CoverageGrid(
+            self.environment,
+            self.config.coverage,
+            self.config.robot,
+        )
+        self.planner = AStarPlanner(
+            self.environment,
+            self.config.coverage,
+            self.config.robot,
+        )
+
+        def coverage_progress_fn() -> float:
+            if self.coverage_grid is None:
+                return 0.0
+            return self.coverage_grid.coverage_percent()
+
+        def can_move_check_fn(x1: float, y1: float, x2: float, y2: float, margin: float) -> bool:
+            if self.planner is None:
+                return True
+            total_clearance = self.planner.total_clearance
+            return self.environment.can_move(x1, y1, x2, y2, total_clearance)
+
+        self.navigation = NavigationSimulator(self.config, self._rng, coverage_progress_fn, can_move_check_fn)
         self.events = EventGenerator(self.config, self._rng)
         self.path_history = []
         self._mode_override = None
         self._spill_until = float("-inf")
         self._hist_acc = 0.0
         self._step_count = 0
+        self._mission_built = False
+        self._prev_pose = None
 
     # ------------------------------------------------------------------
     # lifecycle control (used by the API)
@@ -122,6 +160,85 @@ class SimulationEngine:
             self.sim_time = 0.0
             self.uptime = 0.0
 
+    # ------------------------------------------------------------------
+    # dynamic mission building (Phase S1)
+    # ------------------------------------------------------------------
+    def build_dynamic_mission(self) -> None:
+        """Build the full coverage mission: farthest-first rooms, A* transits, boustrophedon lanes.
+
+        Called automatically on the first cleaning start if no mission has been built.
+        """
+        if self._mission_built or self.coverage_grid is None or self.planner is None:
+            return
+
+        dock = tuple(self.config.navigation.dock_position)
+
+        room_costs = compute_room_costs(self.planner, self.environment.rooms, dock)
+
+        waypoints: List[Waypoint] = []
+        waypoints.append(Waypoint(x=dock[0], y=dock[1], label="Dock"))
+
+        prev_pos = dock
+
+        for room_name, cost, (cx, cy), bounds in room_costs:
+            if cost < 0:
+                continue
+
+            lanes = generate_boustrophedon_lanes(
+                bounds,
+                self.config.coverage.cleaning_width,
+                self.config.coverage.lane_overlap,
+                self.config.coverage.safety_clearance,
+                self.config.robot.footprint_radius,
+            )
+
+            lanes = split_lanes_by_obstacles(
+                lanes,
+                self.environment.obstacles + self.environment.restricted_areas,
+                self.config.coverage.cleaning_width,
+                self.config.robot.footprint_radius,
+            )
+
+            first_lane_point = None
+            if lanes and len(lanes[0]) >= 2:
+                first_lane_point = (lanes[0][0][0], lanes[0][0][1])
+            elif lanes and len(lanes[0]) >= 1:
+                first_lane_point = (lanes[0][0][0], lanes[0][0][1])
+
+            if first_lane_point is not None:
+                connect_transit = self.planner.plan(prev_pos, first_lane_point)
+                if connect_transit is not None and len(connect_transit) > 1:
+                    for pt in connect_transit[1:]:
+                        waypoints.append(Waypoint(x=pt[0], y=pt[1], label=f"Transit to {room_name}"))
+
+            lane_label = f"{room_name} cleaning"
+            for lane in lanes:
+                if len(lane) >= 2:
+                    for pt in lane:
+                        waypoints.append(Waypoint(x=pt[0], y=pt[1], label=lane_label))
+
+            last_lane_point = None
+            if lanes and len(lanes[-1]) >= 2:
+                last_lane_point = (lanes[-1][-1][0], lanes[-1][-1][1])
+            elif lanes and len(lanes[-1]) >= 1:
+                last_lane_point = (lanes[-1][-1][0], lanes[-1][-1][1])
+
+            if last_lane_point is not None:
+                prev_pos = last_lane_point
+            else:
+                prev_pos = (cx, cy)
+
+        return_transit = self.planner.plan(prev_pos, dock)
+        if return_transit is not None and len(return_transit) > 1:
+            for pt in return_transit[1:]:
+                waypoints.append(Waypoint(x=pt[0], y=pt[1], label="Return to dock"))
+
+        waypoints.append(Waypoint(x=dock[0], y=dock[1], label="Dock"))
+
+        self.navigation.set_mission_route(waypoints)
+        self.coverage_grid.reset()
+        self._mission_built = True
+
     @property
     def is_running(self) -> bool:
         return self._active
@@ -157,6 +274,10 @@ class SimulationEngine:
             if self.status == RobotStatus.CHARGING:
                 self._charge(dt)
             else:
+                # Build dynamic mission on first cleaning start
+                if self.status == RobotStatus.CLEANING and not self._mission_built:
+                    self.build_dynamic_mission()
+
                 pose = self.motion.pose
                 command = self.navigation.step(pose)
                 self.current_task = command.target_label
@@ -167,6 +288,16 @@ class SimulationEngine:
 
                 # Facility-aware collision: revert if the new pose is invalid.
                 self._enforce_boundaries(old_x, old_y)
+
+                # Track area-based cleaning coverage
+                if self.navigation.current_segment_mode() == "cleaning" and self.coverage_grid is not None:
+                    new_pose = self.motion.pose
+                    if self._prev_pose is not None:
+                        self.coverage_grid.mark_cleaned_path(
+                            self._prev_pose[0], self._prev_pose[1],
+                            new_pose.x, new_pose.y,
+                        )
+                    self._prev_pose = (new_pose.x, new_pose.y)
 
                 self.encoders.step(
                     dt, self.motion.left_wheel_speed, self.motion.right_wheel_speed
@@ -257,8 +388,11 @@ class SimulationEngine:
         Checks that the robot's new pose is valid.  When the full move is
         blocked the response tries X-only then Y-only projections so the
         robot can *slide* along walls instead of freezing in place.
+
+        Uses total_clearance (footprint_radius + safety_clearance) to match
+        A* planner's edge validation clearance requirement.
         """
-        margin = self.config.robot.footprint_radius
+        margin = self.planner.total_clearance if self.planner else self.config.robot.footprint_radius
         pose = self.motion.pose
 
         # 1. Full move is fine — nothing to do.
@@ -406,12 +540,17 @@ class SimulationEngine:
                     "meters_cleaned": round(self.navigation.cleaned_meters, 1),
                     "lap": self.navigation.lap,
                     "laps_completed": self.navigation.laps_completed,
-                    "route_length_m": round(self.navigation._total_route_length, 1),
+                    "route_length_m": round(self.navigation._mission_route_length() if self.navigation._mission_route else self.navigation._total_route_length, 1),
+                    "coverage_percent": round(self.coverage_grid.coverage_percent(), 1) if self.coverage_grid else 0.0,
+                    "coverage_by_room": self.coverage_grid.coverage_by_room() if self.coverage_grid else {},
+                    "cells_cleaned": self.coverage_grid.total_cleaned_cells() if self.coverage_grid else 0,
+                    "cells_total": self.coverage_grid.total_cleanable_cells() if self.coverage_grid else 0,
+                    "mission_built": self._mission_built,
                 },
                 "path_history": self.path_history[-200:],
                 "planned_route": [
-                    {"x": round(wp[0], 2), "y": round(wp[1], 2), "label": wp[2]}
-                    for wp in self.config.navigation.cleaning_route
+                    {"x": round(wp.x, 2), "y": round(wp.y, 2), "label": wp.label}
+                    for wp in (self.navigation._effective_route() if self.navigation._mission_route else self.navigation._clean_route)
                 ],
                 "tick_hz": round(1.0 / self.config.simulation.sensor_dt, 1),
                 "events_in_history": len(self.events.recent(limit=100000)),
@@ -427,8 +566,10 @@ class SimulationEngine:
                 "y": round(self.navigation._dock.y, 2),
                 "label": "Charging dock",
             }
-        route = self.navigation._clean_route
+        route = self.navigation._effective_route()
         index = min(self.navigation.index, len(route) - 1) if route else 0
+        if index >= len(route):
+            return None
         wp = route[index]
         return {"x": round(wp.x, 2), "y": round(wp.y, 2), "label": wp.label}
 
@@ -479,11 +620,19 @@ class SimulationEngine:
     def get_map(self) -> Dict[str, Any]:
         """Static + dynamic floor-plan data for dashboard map rendering."""
         with self._lock:
+            if not self._mission_built:
+                self.build_dynamic_mission()
             data = self.environment.to_dict(self.config.navigation.dock_position)
             data["robot_id"] = self.config.simulation.robot_id
-            data["cleaning_route"] = [
-                {"x": x, "y": y, "label": label}
-                for (x, y, label) in self.config.navigation.cleaning_route
-            ]
+            if self.navigation._mission_route:
+                data["cleaning_route"] = [
+                    {"x": wp.x, "y": wp.y, "label": wp.label}
+                    for wp in self.navigation._mission_route
+                ]
+            else:
+                data["cleaning_route"] = [
+                    {"x": x, "y": y, "label": label}
+                    for (x, y, label) in self.config.navigation.cleaning_route
+                ]
             data["robot_pose"] = self.motion.pose.to_dict()
             return data

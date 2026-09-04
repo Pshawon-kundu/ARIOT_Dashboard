@@ -123,38 +123,37 @@ environment:
       y_min: 8.2
       y_max: 10.8
 
+coverage:
+  grid_resolution: 0.25          # metres per grid cell
+  cleaning_width: 0.60          # actual cleaning mechanism width
+  lane_overlap: 0.05            # overlap between adjacent passes
+  safety_clearance: 0.10        # clearance from walls/obstacles
+  farthest_first: true           # clean farthest rooms first
+
 navigation:
   dock_position: [3.5, 3.5, 0.0]  # charging dock (in Lobby)
-  waypoint_tolerance: 0.35        # arrival radius [m]
+  waypoint_tolerance: 0.35        # DEPRECATED: use transit/cleaning tolerances below
+  transit_waypoint_tolerance: 0.10  # tighter tolerance for transit segments [m]
+  cleaning_waypoint_tolerance: 0.12  # tolerance for cleaning lane waypoints [m]
+  # DEPRECATED: cleaning_route is no longer used for active missions.
+  # The cleaning mission is now dynamically generated from coverage configuration.
+  # This route is kept for backward compatibility with tests and legacy code.
   cleaning_route:
-    # Lobby boustrophedon sweep
-    - [3.5, 10.5, "Cleaning Lobby - Row A1"]
-    - [8.5, 10.5, "Cleaning Lobby - Row A2"]
-    - [8.5, 7.5, "Cleaning Lobby - Row B1"]
-    - [3.5, 7.5, "Cleaning Lobby - Row B2"]
-    - [3.5, 4.5, "Cleaning Lobby - Row C1"]
-    - [8.5, 4.5, "Cleaning Lobby - Row C2"]
-    # Transit through door -> Corridor A
-    - [9.6, 9.5, "Transit to Corridor A"]
-    - [10.6, 9.5, "Corridor A - Entrance"]
-    # Corridor A sweep
-    - [13.0, 9.5, "Cleaning Corridor A - Zone 1"]
-    - [16.0, 9.5, "Cleaning Corridor A - Zone 2"]
-    - [19.4, 9.5, "Cleaning Corridor A - Zone 3"]
-    # Transit through door -> East Wing
-    - [20.6, 9.5, "East Wing - Entrance"]
-    # East Wing sweep
-    - [23.5, 10.5, "Cleaning East Wing - Row A1"]
-    - [26.5, 10.5, "Cleaning East Wing - Row A2"]
-    - [26.5, 7.5, "Cleaning East Wing - Row B1"]
-    - [23.5, 7.5, "Cleaning East Wing - Row B2"]
-    - [23.5, 4.5, "Cleaning East Wing - Row C1"]
-    - [26.5, 4.5, "Cleaning East Wing - Row C2"]
-    # Return transit back through Corridor A to Lobby
-    - [19.4, 9.5, "Return transit - Corridor A"]
-    - [13.0, 9.5, "Return transit - Corridor A"]
-    - [9.6, 9.5, "Return transit - Lobby"]
-    - [3.5, 9.0, "Return transit - Lobby"]
+    - [3.5, 3.5, "Dock"]
+    - [5.0, 3.5, "Lobby - Section A"]
+    - [8.0, 3.5, "Lobby - Section B"]
+    - [8.0, 10.0, "Lobby - Corridor junction"]
+    - [15.0, 10.0, "Corridor A - East"]
+    - [19.0, 10.0, "Corridor A - East Wing junction"]
+    - [24.0, 10.0, "East Wing - Section A"]
+    - [24.0, 5.0, "East Wing - Center"]
+    - [24.0, 3.5, "East Wing - Section B"]
+    - [19.0, 3.5, "East Wing - Corridor junction"]
+    - [15.0, 9.0, "Corridor A - West"]
+    - [8.0, 9.0, "Corridor A - Lobby junction"]
+    - [5.0, 9.0, "Lobby - Section C"]
+    - [3.5, 9.0, "Lobby - Dock approach"]
+    - [3.5, 3.5, "Charging dock"]
 
 events:
   enabled: true

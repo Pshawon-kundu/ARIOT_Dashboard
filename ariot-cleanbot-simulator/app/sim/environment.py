@@ -73,6 +73,42 @@ def ray_segment_distance(
     return t
 
 
+def _segments_intersect(
+    x1: float, y1: float,
+    x2: float, y2: float,
+    x3: float, y3: float,
+    x4: float, y4: float,
+) -> bool:
+    """Return True if segment AB crosses segment CD."""
+    def cross(ox, oy, px, py, qx, qy):
+        return (px - ox) * (qy - oy) - (py - oy) * (qx - ox)
+    d1 = cross(x3, y3, x4, y4, x1, y1)
+    d2 = cross(x3, y3, x4, y4, x2, y2)
+    d3 = cross(x1, y1, x2, y2, x3, y3)
+    d4 = cross(x1, y1, x2, y2, x4, y4)
+    if ((d1 > 0 and d2 < 0) or (d1 < 0 and d2 > 0)) and \
+       ((d3 > 0 and d4 < 0) or (d3 < 0 and d4 > 0)):
+        return True
+    return False
+
+
+def _line_intersects_rect(
+    x1: float, y1: float,
+    x2: float, y2: float,
+    rxmin: float, rymin: float,
+    rxmax: float, rymax: float,
+) -> bool:
+    """Check if line segment intersects axis-aligned rectangle."""
+    if (x1 >= rxmin and x1 <= rxmax and y1 >= rymin and y1 <= rymax):
+        return True
+    if (x2 >= rxmin and x2 <= rxmax and y2 >= rymin and y2 <= rymax):
+        return True
+    return (_segments_intersect(x1, y1, x2, y2, rxmin, rymin, rxmax, rymin) or
+            _segments_intersect(x1, y1, x2, y2, rxmax, rymin, rxmax, rymax) or
+            _segments_intersect(x1, y1, x2, y2, rxmin, rymax, rxmax, rymax) or
+            _segments_intersect(x1, y1, x2, y2, rxmin, rymin, rxmin, rymax))
+
+
 class VirtualFacility:
     """The simulated floor plan used by LiDAR and navigation."""
 
@@ -204,14 +240,71 @@ class VirtualFacility:
                 return False
         return True
 
+    def _path_crosses_obstacle(self,
+                               x1: float, y1: float,
+                               x2: float, y2: float,
+                               margin: float = 0.0) -> bool:
+        """True if the straight line from (x1,y1) to (x2,y2) crosses any obstacle."""
+        all_obs = self.obstacles + self.restricted_areas + self._dynamic_obstacles
+        for obs in all_obs:
+            oxmin, oymin, oxmax, oymax = obs.bounds
+            if _line_intersects_rect(x1, y1, x2, y2, oxmin - margin, oymin - margin, oxmax + margin, oymax + margin):
+                return True
+        return False
+
+    def _path_segment_clearance(self,
+                                x1: float, y1: float,
+                                x2: float, y2: float,
+                                margin: float) -> float:
+        """Minimum distance from robot center (with margin) to walls along path.
+
+        Returns the minimum distance. If < margin, the path violates clearance.
+        """
+        min_dist = float("inf")
+        for seg in self.walls:
+            dist = self._min_distance_segment_to_segment(x1, y1, x2, y2, *seg)
+            if dist < min_dist:
+                min_dist = dist
+        return min_dist - margin
+
+    @staticmethod
+    def _min_distance_segment_to_segment(
+        ax: float, ay: float,
+        bx: float, by: float,
+        cx: float, cy: float,
+        dx: float, dy: float,
+    ) -> float:
+        """Minimum distance between two line segments AB and CD."""
+        dists = [
+            VirtualFacility._point_to_segment_distance(ax, ay, cx, cy, dx, dy),
+            VirtualFacility._point_to_segment_distance(bx, by, cx, cy, dx, dy),
+            VirtualFacility._point_to_segment_distance(cx, cy, ax, ay, bx, by),
+            VirtualFacility._point_to_segment_distance(dx, dy, ax, ay, bx, by),
+        ]
+        if not VirtualFacility._segments_intersect(ax, ay, bx, by, cx, cy, dx, dy):
+            pass
+        else:
+            return 0.0
+        return min(d for d in dists if d is not None)
+
     def can_move(self,
                  x1: float, y1: float,
                  x2: float, y2: float,
                  margin: float = 0.0) -> bool:
-        """True if moving from (x1,y1) to (x2,y2) is collision-free."""
+        """True if moving from (x1,y1) to (x2,y2) is collision-free.
+
+        Checks:
+        - End position is valid with margin
+        - Path does not cross walls or obstacles
+        - Path maintains required clearance from walls throughout
+        """
         if not self.is_valid_position(x2, y2, margin):
             return False
         if self._path_crosses_wall(x1, y1, x2, y2):
+            return False
+        if self._path_crosses_obstacle(x1, y1, x2, y2, margin):
+            return False
+        if self._path_segment_clearance(x1, y1, x2, y2, margin) < 0.0:
             return False
         return True
 

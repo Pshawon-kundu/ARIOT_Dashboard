@@ -211,6 +211,15 @@ class EventsSection:
 
 
 @dataclass
+class CoverageSection:
+    grid_resolution: float = 0.25
+    cleaning_width: float = 0.60
+    lane_overlap: float = 0.05
+    safety_clearance: float = 0.10
+    farthest_first: bool = True
+
+
+@dataclass
 class ApiSection:
     host: str = "127.0.0.1"
     port: int = 8100
@@ -233,6 +242,7 @@ class Config:
     environment: EnvironmentSection = field(default_factory=EnvironmentSection)
     navigation: NavigationSection = field(default_factory=NavigationSection)
     events: EventsSection = field(default_factory=EventsSection)
+    coverage: CoverageSection = field(default_factory=CoverageSection)
     api: ApiSection = field(default_factory=ApiSection)
 
     @classmethod
